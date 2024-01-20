@@ -1,0 +1,5 @@
+*.gb
+*.o
+*.map
+*.sym
+.DS_Store

@@ -1,0 +1,20 @@
+source:0x10 target:0 transpose:-18
+source:0x11 target:1 transpose:-18
+source:0x12 target:2 transpose:-18
+source:0x22 target:3 transpose:-18
+source:0x21 target:4 transpose:-18
+source:0x31 target:5 transpose:-18
+source:0x32 target:6 transpose:-18
+source:0x33 target:7 transpose:-18
+source:0x24 target:8 transpose:-18
+source:0x34 target:9 transpose:-18
+source:0x35 target:10 transpose:-18
+source:0x25 target:11 transpose:-18
+source:0x26 target:12 transpose:-18
+source:0x01 target:13 transpose:-18
+source:0x02 target:14 transpose:-18
+source:0x03 target:15 transpose:-18
+source:0x23 target:16 transpose:-18
+# DMC
+source:0x39 target:0
+source:0x3A target:1
