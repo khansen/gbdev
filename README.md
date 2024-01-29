@@ -10,6 +10,10 @@
 
 To see the projects in action, visit https://www.youtube.com/notube4me
 
+## Articles
+
+- [The process of porting an NES sound engine to Game Boy](https://github.com/khansen/gbdev/blob/master/articles/porting-nes-sound-engine/index.md)
+
 ## A selection of useful resources
 
 - https://gbdev.io/pandocs/: Comprehensive technical reference
