@@ -1,6 +1,8 @@
 # The process of porting an NES sound engine to Game Boy
 
-_January, 2024. Version 1.0_
+_January, 2024: Version 1.0_
+
+_February 4, 2024: Version 1.1_
 
 ## Introduction
 
@@ -559,10 +561,12 @@ the larger the period value is on Game Boy, the higher the frequency.
 How the data for a row in the pattern is interpreted depends on the value of
 the next byte of pattern data.
 
-- If the value is greater than or equal to $f0, it's a command (which can have
-a parameter).
+- If the value is between $c0 and $cf (inclusive), it's a _set speed_ command.
+- If the value is between $d0 and $df (inclusive), it's a _set volume_ command.
 - If the value is between $e0 and $ef (inclusive), it's an effect (which can
 have a parameter).
+- If the value is greater than or equal to $f0, it's an extended command (which
+can have a parameter).
 - Otherwise, the value is a note, and it signals the end of data for this row.
 
 > What's the difference between a command and an effect? They both change some
@@ -612,18 +616,38 @@ tick 0 of a new row.
 
 Effects are described in more detail in a later section.
 
-###### Command types
+###### Set speed command
 
-A command type byte can be followed by a parameter byte, depending on the type
-of command. Commands are only processed on tick 0 of a new row.
+The set speed command ($c0 - $cf) sets the speed to the value of the lower 4
+bits of the command byte plus one. The speed is applied to _all_ tracks.
+
+For setting the speed to higher values than 16, an extended command must be
+used instead (see below).
+
+###### Set volume command
+
+The set volume command ($d0 - $df) sets the track's master volume to the value
+of the lower 4 bits of the command byte multiplied by 16 (0, 16, 32, ..., 240).
+
+###### Extended command types
+
+An extended command type byte ($f0 - $ff) can be followed by a parameter byte,
+depending on the type of command. Commands are only processed on tick 0 of a
+new row.
 
 |Command type byte|Parameter|Description|
 |-----------------|---------|-----------|
 |$f0| index | Set instrument.|
 |$f1| - | Release (expire volume envelope counter). |
-|$f2| volume | Set track's master volume (0-255). |
-|$f3| speed | Set speed. The speed is applied to _all_ tracks. |
-|$f4| - | End of row data. This command signals that a new note should _not_ be triggered for this row, and is typically preceded by an effect (for example, vibrato or slide down).|
+|$f2| speed | Set speed. The speed is applied to _all_ tracks. |
+|$f3| - | End of row data. This command signals that a new note should _not_ be triggered for this row, and is typically preceded by an effect (for example, vibrato or slide down).|
+
+> In the NES sound engine, _set speed_ and _set volume_ are both "extended"
+commands that occupy 2 bytes. To reduce storage consumption, I introduced the
+more compact commands. Songs that use a "swing"/"funky" tempo typically change
+the speed every second (even) row of the pattern; by halving the size of each
+command, the savings can be tremendous. Similar savings can be achieved for
+those cases where manual volume control is used instead of a volume envelope.
 
 ## Sound engine architecture
 
@@ -657,29 +681,28 @@ def Track_Tick rb 1                                 ; 01
 def Track_Pattern_RowCount rb 1                     ; 02
 def Track_Pattern_Row rb 1                          ; 03
 def Track_Pattern_RowStatus rb 1                    ; 04
-def Track_Pattern_Pos rb 1                          ; 05
-def Track_Pattern_Ptr rw 1                          ; 06
-def Track_Order_Pos rb 1                            ; 08
-def Track_Effect_Kind rb 1                          ; 09
-def Track_Effect_Param rb 1                         ; 0A
-def Track_Effect_Pos rb 1                           ; 0B
+def Track_Pattern_Ptr rw 1                          ; 05
+def Track_Order_Pos rb 1                            ; 07
+def Track_Effect_Kind rb 1                          ; 08
+def Track_Effect_Param rb 1                         ; 09
+def Track_Effect_Pos rb 1                           ; 0A
 rsset Track_Effect_Pos
-def Track_Effect_Portamento_Ctrl rb 1 ; bit 7: done if zero. bit 0: direction ; 0B
-def Track_Effect_Portamento_TargetPeriodLo rb 1     ; 0C
-def Track_Effect_Portamento_TargetPeriodHi rb 1     ; 0D
-def Track_MasterVol rb 1                            ; 0E
-def Track_PeriodIndex rb 1                          ; 0F
-def Track_PeriodLo rb 1                             ; 10
-def Track_PeriodHi rb 1                             ; 11
-def Track_Square_DutyCtrl rb 1                      ; 12
-def Track_Envelope_Phase rb 1                       ; 13
-def Track_Envelope_Ptr rw 1                         ; 14
-def Track_Envelope_Pos rb 1                         ; 16
-def Track_Envelope_Vol rb 1                         ; 17
-def Track_Envelope_Step rb 1                        ; 18
-def Track_Envelope_Dest rb 1                        ; 19
-def Track_Envelope_Hold rb 1                        ; 1A
-def Track_SIZEOF rb 0                               ; 1B
+def Track_Effect_Portamento_Ctrl rb 1 ; bit 7: done if zero. bit 0: direction ; 0A
+def Track_Effect_Portamento_TargetPeriodLo rb 1     ; 0B
+def Track_Effect_Portamento_TargetPeriodHi rb 1     ; 0C
+def Track_MasterVol rb 1                            ; 0D
+def Track_PeriodIndex rb 1                          ; 0E
+def Track_PeriodLo rb 1                             ; 0F
+def Track_PeriodHi rb 1                             ; 10
+def Track_Square_DutyCtrl rb 1                      ; 11
+def Track_Envelope_Phase rb 1                       ; 12
+def Track_Envelope_Ptr rw 1                         ; 13
+def Track_Envelope_Pos rb 1                         ; 15
+def Track_Envelope_Vol rb 1                         ; 16
+def Track_Envelope_Step rb 1                        ; 17
+def Track_Envelope_Dest rb 1                        ; 18
+def Track_Envelope_Hold rb 1                        ; 19
+def Track_SIZEOF rb 0                               ; 1A
 ```
 
 The same processing is performed on all tracks: They all support the same
@@ -1333,8 +1356,8 @@ Some ideas:
 - Add support for custom wave patterns per instrument.
 - Add more fancy visualizations, like in the NES programs (port the code to
 Game Boy).
-- Change the representation of the volume command from $f2 $x0 (2 bytes) to
+- ~~Change the representation of the volume command from $f2 $x0 (2 bytes) to
 $dx (1 byte) to reduce storage consumption. (The whole command range $80-$df is
-still free to use.)
+still free to use.)~~ _Done! Also added a compact set speed command (February 4, 2024)_
 - Isolate the sound engine to a separate source file (`soundEngine.s`), so that
 it can more easily be included in other projects.
