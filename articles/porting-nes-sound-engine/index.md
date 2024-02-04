@@ -174,6 +174,12 @@ dw SONG_instrument_table
 dw SONG_pattern_table
 ```
 
+> The song header does not have a version indicator. `xm2gb` includes a comment
+> in the generated assembly file that says which version was used (e.g., > _";
+> Generated from SONG.XM by xm2gb 3.0.0"_). For each new Game Boy project, I
+> make a full copy of the sound engine, and then adjust the implementation as
+> necessary whenever I make a (breaking) change to the song format.
+
 #### Order table
 
 The order table follows immediately after the header. It's an array of pattern
