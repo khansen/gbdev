@@ -4,6 +4,8 @@ _January, 2024: Version 1.0_
 
 _February 4, 2024: Version 1.1_
 
+_February 5, 2024: Version 1.2_
+
 ## Introduction
 
 This article describes how the NES sound engine found at
@@ -617,7 +619,7 @@ tick 0 of a new row.
 |$e5| delta1:delta2 | Arpeggio |
 |$e6| rate | Volume slide (not yet implemented on Game Boy) |
 |$e7| rate | Tremolo (Not yet implemented on Game Boy) |
-|$e8| - | Cut note |
+|$e8| ticks | Cut note |
 |$e9| duty cycle | Change duty cycle (not yet implemented on Game Boy) |
 
 Effects are described in more detail in a later section.
@@ -798,7 +800,7 @@ to add to the base note on ticks 5 and 6. On the seventh and eight tick, the
 base note is played again, and so on, producing a
 [very rapid arpeggiated chord](https://en.wikipedia.org/wiki/Arpeggio).
 
-The following diagrams shows the note that's played on each tick when the base
+The following diagram shows the note that's played on each tick when the base
 note is G4 and the arpeggio parameter is $59, corresponding to a C major in the
 [second inversion](https://en.wikipedia.org/wiki/Second_inversion):
 ```
@@ -833,20 +835,27 @@ C4 +-------+       +---------------+       +-------+
    0   1   2   3   4   5   6   7   8   9   10  11  12
 ```
 
-### Rendering the track state to sound hardware registers
+### Cut note
+
+The parameter to this effect is the number of ticks after which the note should
+be cut (i.e., volume set to zero). This produces a staccato effect. This is
+different from the _release_ command, which expires the current "sustain"
+counter of the instrument's volume envelope.
+
+## Rendering the track state to sound hardware registers
 
 "Rendering" the track state is the process of converting said state to values
 that are written to the sound hardware registers, according to the parameters
 and capabilities of the associated channel.
 
-#### Pulse channels
+### Pulse channels
 
-##### Duty cycle
+#### Duty cycle
 
 The duty cycle bits are derived from the `Track_Square_DutyCtrl` field that
 comes from the current instrument's definition.
 
-##### Volume
+#### Volume
 
 The pulse channels support 16 volume levels. The output volume is a verbatim
 copy of the upper 4 bits of the computed 8-bit volume of the track.
@@ -876,7 +885,7 @@ register should be written to increment/decrement the volume, we need only
 subtract the previous tick's absolute volume from the current tick's absolute
 volume.
 
-##### Period
+#### Period
 
 The pulse channel period is simply copied verbatim from the `Track_PeriodLo`
 and `Track_PeriodHi` fields to the corresponding hardware registers.
@@ -886,9 +895,9 @@ When a note is played (without portamento effect), the high bit of the
 triggered. This bit is copied to the high bit of the Nrx4 register, then
 set to 0.
 
-#### Wave channel
+### Wave channel
 
-##### Wave pattern RAM
+#### Wave pattern RAM
 
 So far only one hardcoded wave pattern is supported; it's written to wave
 pattern RAM when the program starts up.
@@ -898,7 +907,7 @@ song. It would be nice to provide a similar capability in the Game Boy engine,
 so that different songs (or even a single song) could use different samples for
 their instruments.
 
-##### Volume
+#### Volume
 
 Unlike the pulse channels and the noise channel, the wave channel supports only
 4 volume levels. The output volume is derived from the upper 2 bits of the
@@ -911,23 +920,23 @@ computed 8-bit (virtual) volume of the track, according to the following table:
 | 10                             | 10 (50% volume) |
 | 11                             | 01 (100% volume) |
 
-##### Period
+#### Period
 
 The period of the wave channel works the same way as the pulse channels.
 
-#### Noise channel
+### Noise channel
 
-##### LFSR width
+#### LFSR width
 
 Bit 7 of the `Track_Square_DutyCtrl` field is copied to bit 3 of the NR43
 register (see
 https://gbdev.io/pandocs/Audio_Registers.html#ff22--nr43-channel-4-frequency--randomness).
 
-##### Volume
+#### Volume
 
 The volume of this channel works the same way as the pulse channels.
 
-##### Period
+#### Period
 
 The noise channel has a different way to define the frequency; it's derived
 from a 7-bit value instead of an 11-bit period value like the other three
@@ -1019,7 +1028,8 @@ valuable.
 
 > SameBoy's debugger uses a
 [GDB](https://en.wikipedia.org/wiki/GNU_Debugger)-inspired text interface,
-> which meant I could quickly get productive with it.
+> which meant I could quickly get productive with it. SameBoy even reads
+> rgbds .sym files and shows the symbolic addresses.
 
 #### Step 3: Materialize some sound
 
@@ -1208,7 +1218,7 @@ That's only two instructions, but still 4 bytes and 5 cycles. (Such a shame
 that there isn't an instruction to load an _8-bit_ constant into a 16-bit
 register (zero- or sign-extending it).) Also, normally I can't afford to
 clobber the BC or DE register, because those contain other data. Sure, we can
-preserve the register:
+preserve the register with `PUSH` and `POP`:
 ```
     push de
     ld de, Track_SIZEOF
@@ -1263,8 +1273,8 @@ definitions I'd comment the name of the field that the HL register should point
 to upon entry, and then try to verify that all the branch points respected
 this. Still, I had some bugs that required focused debugging sessions, stepping
 through a lot of code blocks. Despite the diligent comments, I broke the engine
-a couple of times when removing and re-arranging fields (even though I was
-careful to only do and verify such changes one at a time).
+a few times when removing and re-arranging fields (even though I was careful to
+only do and verify such changes one at a time).
 
 Honestly, this "walking up and down memory via HL" ordeal feels uncannily
 similar to how a [Turing machine](https://en.wikipedia.org/wiki/Turing_machine)
