@@ -94,7 +94,7 @@ was first introduced by the program [FastTracker 2](https://en.wikipedia.org/wik
 For the Game Boy version, I modified `xm2nes` slightly to create `xm2gb`. The
 sound capabilities of NES and Game Boy are so similar that not many adjustments
 had to be made. Also, the song format is mostly hardware-agnostic, which makes
-it easy to adopt to any system that has sound channels with programmable pitch
+it easy to adapt to any system that has sound channels with programmable pitch
 and volume.
 
 > The philosophy is that the format and core engine can use a relatively "high
@@ -1113,7 +1113,7 @@ familiarity with processing input, too).
 #### Step 7: Play to the Game Boy's strengths
 
 Finally, I made some adjustments to the song ("Super Mario Land - World 1") to
-adopt it to the Game Boy. The original NES version used the DPCM channel for
+adapt it to the Game Boy. The original NES version used the DPCM channel for
 percussion; I "ported" the percussion to the noise channel on Game Boy. I made
 the wave channel (bass line) a bit more "bouncy", since the Game Boy wave
 channel comes through a lot better than the triangle channel on the NES, which
