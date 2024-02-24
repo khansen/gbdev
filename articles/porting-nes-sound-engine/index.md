@@ -6,6 +6,8 @@ _February 4, 2024: Version 1.1_
 
 _February 5, 2024: Version 1.2_
 
+_February 24, 2024: Version 1.3_
+
 ## Introduction
 
 This article describes how the NES sound engine found at
