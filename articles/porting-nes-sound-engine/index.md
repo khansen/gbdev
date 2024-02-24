@@ -76,10 +76,7 @@ The Game Boy has a 4-bit sample (wave) channel with programmable sample data.
 It has 4 volume levels and fine-tunable pitch. The wave form can be programmed
 to be a pulse, triangle, sawtooth, sine, or custom shape.
 
-The Game Boy supports panning each channel.
-
-> The sound engine doesn't support panning yet, but this feature could be
-> implemented with relatively little effort.
+The Game Boy supports panning each channel (hard left, center, hard right).
 
 > For full references on sound hardware, see https://gbdev.io/pandocs/Audio.html
 > (Game Boy) and https://www.nesdev.org/wiki/APU (NES).
@@ -649,6 +646,9 @@ new row.
 |$f1| - | Release (expire volume envelope counter). |
 |$f2| speed | Set speed. The speed is applied to _all_ tracks. |
 |$f3| - | End of row data. This command signals that a new note should _not_ be triggered for this row, and is typically preceded by an effect (for example, vibrato or slide down).|
+|$f4| - | Pan left |
+|$f5| - | Pan center |
+|$f6| - | Pan right |
 
 > In the NES sound engine, _set speed_ and _set volume_ are both "extended"
 commands that occupy 2 bytes. To reduce storage consumption, I introduced the
@@ -1368,7 +1368,7 @@ possibilities.
 
 Some ideas:
 - Convert more existing songs from NES to Game Boy.
-- Implement the panning effect (8xx).
+- ~~Implement the panning effect (8xx).~~ _Done! (February 24, 2024)_
 - Add support for custom wave patterns per instrument.
 - Add more fancy visualizations, like in the NES programs (port the code to
 Game Boy).
