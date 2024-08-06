@@ -1,4 +1,4 @@
-PROGRAM = DireDireRocks
+PROGRAM = DireDireDocks
 
 $(PROGRAM).gb: $(PROGRAM).o
 	rgblink -t -n $(PROGRAM).sym -m $(PROGRAM).map -o $(PROGRAM).gb $(PROGRAM).o
