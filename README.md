@@ -2,7 +2,7 @@
 
 ## How to build the projects
 
-- Install rgbds: https://rgbds.gbdev.io/
+- Install rgbds: https://rgbds.gbdev.io/ (tested on version: 0.8.0)
 - Clone https://github.com/khansen/xm2nes/, check out the `xm2gb` branch, build and install the `xm2gb` tool
 - In a project folder (e.g., `music/super-mario-land/`), run `make`
 
