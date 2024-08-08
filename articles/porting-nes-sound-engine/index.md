@@ -8,6 +8,8 @@ _February 5, 2024: Version 1.2_
 
 _February 24, 2024: Version 1.3_
 
+_August 8, 2024: Version 1.4_
+
 ## Introduction
 
 This article describes how the NES sound engine found at
@@ -224,8 +226,7 @@ The NES sound engine supports the following order commands.
 | $fe | offset | Go to the given offset in the order table. |
 | $ff | - | Stop the track. |
 
-The Game Boy engine so far only implements the $fe command ("Go to"), and it
-does so only partially (it cheats by just restarting the whole program!). The
+The Game Boy engine so far only implements the $fe command ("Go to offset"). The
 other commands haven't been needed. In practice, there aren't many cases where
 looping a part of the order yields any benefit. Given the following "plain"
 order:
@@ -1372,8 +1373,8 @@ Some ideas:
 - Convert more existing songs from NES to Game Boy.
 - ~~Implement the panning effect (8xx).~~ _Done! (February 24, 2024)_
 - Add support for custom wave patterns per instrument.
-- Add more fancy visualizations, like in the NES programs (port the code to
-Game Boy).
+- ~~Add more fancy visualizations, like in the NES programs (port the code to
+Game Boy).~~ _Done! See "Dire, Dire Docks" remix (August 8, 2024)_
 - ~~Change the representation of the volume command from $f2 $x0 (2 bytes) to
 $dx (1 byte) to reduce storage consumption. (The whole command range $80-$df is
 still free to use.)~~ _Done! Also added a compact set speed command (February 4, 2024)_
