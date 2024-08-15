@@ -24,4 +24,5 @@ To see the projects in action, visit https://www.youtube.com/notube4me
 - https://gbdev.io/gb-asm-tutorial/
 - https://github.com/ahrnbom/gbapfomgd: Game Boy Assembly Programming for the Modern Game Developer
 - https://16-bits.org/ft2.php: FastTracker II clone
+- https://openmpt.org: OpenMPT is a powerful audio application that makes writing music fun, easy and efficient
 
