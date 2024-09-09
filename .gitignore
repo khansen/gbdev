@@ -1,5 +1,8 @@
+*.elf
 *.gb
+*.gba
 *.o
 *.map
+*.sav
 *.sym
 .DS_Store

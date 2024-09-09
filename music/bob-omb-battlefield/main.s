@@ -1201,7 +1201,7 @@ RenderChannel1:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr11 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr11 ; if counter is NON-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
