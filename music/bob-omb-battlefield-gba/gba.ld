@@ -17,4 +17,9 @@ SECTIONS
 
     /* Place uninitialized data (.bss) in IWRAM */
     .bss 0x03000000 : { *(.bss*) }
+
+    /* Discard all other unexpected sections */
+    /DISCARD/ : {
+        *(*)
+    }
 }
