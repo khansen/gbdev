@@ -18,6 +18,8 @@ Hero games](https://www.dpadhero.com) and recordings of songs posted on my
 [YouTube channel](https://www.youtube.com/@notube4me/videos)) was ported to the
 Game Boy.
 
+You can find a video version of this article [on YouTube](https://www.youtube.com/watch?v=wAKbWo5_Q7E).
+
 The NES sound engine has largely remained unchanged the last 20 years. (Its
 origins can be traced back to circa 1999; the first implementation was written
 for the [X816 assembler](https://www.zophar.net/utilities/nesdev/x816-assembler.html),
