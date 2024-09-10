@@ -2,9 +2,17 @@
 
 ## How to build the projects
 
+### Game Boy
+
 - Install rgbds: https://rgbds.gbdev.io/ (tested on version: 0.8.0)
-- Clone https://github.com/khansen/xm2nes/, check out the `xm2gb` branch, build and install the `xm2gb` tool
+- Clone the repository https://github.com/khansen/xm2nes/, check out the `xm2gb` branch, build and install the `xm2gb` tool
 - In a project folder (e.g., `music/super-mario-land/`), run `make`
+
+### Game Boy Advance
+
+- Install `arm-none-eabi-gcc`. On Mac, you can get it via Homebrew: `brew install --cask gcc-arm-embedded`
+- Clone the repository https://github.com/khansen/xm2nes/, check out the `xm2gba` branch, build and install the `xm2gba` tool
+- In a project folder (e.g., `music/bob-omb-battlefield-gba/`), run `make`
 
 ## Video recordings
 
