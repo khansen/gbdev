@@ -1,6 +1,8 @@
 .section .bss
 .align 4
 frame_counter: .space 4
+keys_held: .space 2
+keys_pressed: .space 2
 
 .section .text
 .global _start
@@ -46,6 +48,18 @@ makerCode:
 .equ VIDEO_BUFFER, 0x06000000
 .equ SCREEN_WIDTH, 240
 .equ SCREEN_HEIGHT, 160
+
+.equ KEY_INPUT, 0x04000130
+.equ KEY_A,   0x001
+.equ KEY_B,   0x002
+.equ KEY_SL,  0x004
+.equ KEY_ST,  0x008
+.equ KEY_RT,  0x010
+.equ KEY_LFT, 0x020
+.equ KEY_UP,  0x040
+.equ KEY_DWN, 0x080
+.equ KEY_R,   0x100
+.equ KEY_L,   0x200
 
 _start:
     @ Set up the stack pointer for IRQ mode
@@ -94,13 +108,26 @@ _start:
 infinite_loop:
     b infinite_loop
 
+read_key_input:
+    ldr r0, =KEY_INPUT
+    ldrh r1, [r0]
+    ldr r2, =-1
+    eor r1, r1, r2  @ invert all bits (so that 1=input, 0=no input)
+    ldr r0, =keys_held
+    ldrh r2, [r0] @ old keys_held
+    strh r1, [r0] @ write new keys_held
+    eor r2, r2, r1
+    and r2, r2, r1
+    strh r2, [r0, #2] @ keys_pressed
+    bx lr
+
 vblank_handler:
     push {lr}
 
     @ TODO: skip if still processing previous vblank
     @ TODO: flush VRAM buffer
     @ TODO: copy sprites using DMA?
-    @ TODO: read input
+    bl read_key_input
 
     mov r0, #1
     ldr r1, =main_handler_jump_table
@@ -145,6 +172,29 @@ main_handler_0:
     bx lr
 
 main_handler_1:
+    @ check if channels should be (un)muted
+    ldr r0, =keys_pressed
+    ldrh r0, [r0]
+    ldr r1, =sound_status
+    ldrb r2, [r1]
+    tst r0, #KEY_UP
+    beq 1f @ up_not_pressed
+    eor r2, r2, #1 @ toggle channel 1
+    1: @ up_not_pressed
+    tst r0, #KEY_DWN
+    beq 1f @ down_not_pressed
+    eor r2, r2, #2 @ toggle channel 2
+    1: @ down_not_pressed
+    tst r0, #KEY_LFT
+    beq 1f @ left_not_pressed
+    eor r2, r2, #4 @ toggle channel 3
+    1: @ left_not_pressed
+    tst r0, #KEY_RT
+    beq 1f @ right_not_pressed
+    eor r2, r2, #8 @ toggle channel 4
+    1: @ right_not_pressed
+    strb r2, [r1]
+
     ldr r0, =VIDEO_BUFFER
     ldr r1, =image_data
     ldr r2, =64
@@ -160,3 +210,4 @@ main_handler_1:
 .extern init_sound
 .extern song_song
 .extern start_song
+.extern sound_status

@@ -131,6 +131,7 @@ shadow_nr42: .space 1
 .global init_sound
 .global start_song
 .global update_sound
+.global sound_status
 .extern jump_table
 .code 32
 
