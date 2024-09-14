@@ -1,8 +1,26 @@
+.equ IWRAM_START,  0x03000000
+
+.equ DMA3_SRC,     0x040000D4
+.equ DMA3_DEST,    0x040000D8
+.equ DMA3_CNT,     0x040000DC
+
+.equ DMA_ENABLE,   (1 << 31)
+.equ DMA_START_NOW,(0 << 28)
+.equ DMA_32BIT,    (1 << 26)
+.equ DMA_SRC_INC,  (0 << 23)
+.equ DMA_SRC_FIXED,(2 << 23)
+.equ DMA_DST_INC,  (0 << 21)
+
 .section .bss
 .align 4
+vram_buffer: .space 256*2
+
 frame_counter: .space 4
+
 keys_held: .space 2
 keys_pressed: .space 2
+
+vram_buffer_offset: .space 2
 
 .section .text
 .global _start
@@ -42,9 +60,21 @@ makerCode:
         .byte 0
     .endr
 
-.equ VIDEO_MODE, 0x04000000
-.equ MODE3, 0x0003
+.equ DISPCNT,    0x04000000
+.equ DISPSTAT,   0x04000004
+.equ BG0CNT,     0x04000008
+.equ BG_SIZE_256x256, 0x0000
+.equ BG_COLOR_16, 0x0000
+.equ BG_PRIORITY_0, 0x0000
+.equ BG_CHAR_BASE_BLOCK_0, 0x0000
+.equ BG_SCREEN_BASE_BLOCK_2, 0x0200
+.equ BG_MODE0,   0x0000
+.equ BG_MODE3,   0x0003
+.equ BG0_ENABLE, 0x0100
+.equ BG1_ENABLE, 0x0200
 .equ BG2_ENABLE, 0x0400
+.equ BG3_ENABLE, 0x0800
+.equ OBJ_ENABLE, 0x1000
 .equ VIDEO_BUFFER, 0x06000000
 .equ SCREEN_WIDTH, 240
 .equ SCREEN_HEIGHT, 160
@@ -68,9 +98,32 @@ _start:
     mov sp, r0            @ Set IRQ stack pointer
     msr CPSR_c, #0x1F     @ Return to system mode
 
-    @ TODO: copy tiles to VRAM
-    @ TODO: copy palettes to VRAM
-    @ TODO: copy tilemaps to VRAM
+    bl clear_iwram
+
+    @ Configure BG0
+    ldr r0, =BG0CNT
+    mov r1, #(BG_SIZE_256x256 | BG_COLOR_16 | BG_PRIORITY_0 | BG_CHAR_BASE_BLOCK_0 | BG_SCREEN_BASE_BLOCK_2)
+    strh r1, [r0]
+
+    bl clear_vram
+
+    @ Copy tiles to VRAM
+    ldr r0, =bg_tiles
+    ldr r1, =0x06000000  @ Character Base Block 0
+    mov r2, #((bg_tiles_end - bg_tiles) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    bl dma3
+
+    @ Copy palettes to VRAM
+    ldr r0, =bg_palettes
+    ldr r1, =0x05000000  @ BG palette RAM
+    mov r2, #((bg_palettes_end - bg_palettes) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    bl dma3
+
+    @ Copy tilemap to VRAM
+    ldr r0, =bg_tilemap
+    bl write_vram_string_array
 
     bl init_sound
 
@@ -81,7 +134,7 @@ _start:
     ldr r1, =vblank_handler @ Address of the VBlank handler
     str r1, [r0]           @ Write handler address to IRQ vector
 
-    ldr r0, =0x04000004   @ Address of DISPSTAT register
+    ldr r0, =DISPSTAT
     mov r1, #0x0008       @ Set bit 3 to enable VBlank interrupt
     strh r1, [r0]         @ Write to DISPSTAT register
 
@@ -100,13 +153,54 @@ _start:
     msr CPSR_c, r0
 
     @ Enable video
-    ldr r0, =VIDEO_MODE
-    ldr r1, =(BG2_ENABLE | MODE3)
+    ldr r0, =DISPCNT
+    ldr r1, =(BG0_ENABLE | OBJ_ENABLE | BG_MODE0)
     str r1, [r0]
 
 @ Loop forever, logic happens in VBlank handler
 infinite_loop:
     b infinite_loop
+
+clear_iwram:
+@    ldr r0, =zero
+    eor r0, r0, r0
+    ldr r1, =IWRAM_START
+    mov r2, #((32 * 1024) / 4) @ Number of words to transfer (32KB)
+@ Have not been able to get DMA to work with DMA_SRC_FIXED
+@    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_FIXED | DMA_DST_INC)
+@    b dma3
+    b cpu_mem_fill
+
+clear_vram:
+@    ldr r0, =zero
+    eor r0, r0, r0
+    ldr r1, =0x06000000
+    mov r2, #((16 * 1024) / 4) @ Number of words to transfer (32KB)
+@ Have not been able to get DMA to work with DMA_SRC_FIXED
+@    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_FIXED | DMA_DST_INC)
+@    bl dma3
+    b cpu_mem_fill
+
+@ r0 = value (word)
+@ r1 = destination address
+@ r2 = word count
+cpu_mem_fill:
+    str r0, [r1], #4
+    subs r2, r2, #1
+    bne cpu_mem_fill
+    bx lr
+
+@ r0 = source address
+@ r1 = destination address
+@ r2 = count
+dma3:
+    ldr r3, =DMA3_SRC
+    str r0, [r3]
+    ldr r3, =DMA3_DEST
+    str r1, [r3]
+    ldr r3, =DMA3_CNT
+    str r2, [r3]
+    bx lr
 
 read_key_input:
     ldr r0, =KEY_INPUT
@@ -119,6 +213,61 @@ read_key_input:
     eor r2, r2, r1
     and r2, r2, r1
     strh r2, [r0, #2] @ keys_pressed
+    bx lr
+
+flush_vram_buffer:
+    ldr r0, =vram_buffer_offset
+    ldrh r1, [r0]
+    tst r1, r1
+    beq 1f
+    eor r1, r1, r1
+    strh r1, [r0] @ vram_buffer_offset = 0
+    ldr r0, =vram_buffer
+    b write_vram_string_array
+    1:
+    bx lr
+
+@ r0 = address of string
+write_vram_string_array:
+    ldrh r1, [r0], #2 @ lower 16 bits of destination address
+    tst r1, r1
+    beq 1b
+    orr r1, r1, #0x06000000 @ Absolute VRAM address
+    ldrh r2, [r0], #2 @ count
+    2: @ loop
+    ldrh r3, [r0], #2
+    strh r3, [r1], #2
+    subs r2, r2, #1
+    bne 2b
+    b write_vram_string_array
+
+@ r0 = lower 16 bits of start address (hword)
+@ r1 = count (hword)
+@ returns r0 = buffer address
+begin_vram_string:
+    ldr r2, =vram_buffer
+    ldr r3, =vram_buffer_offset
+    ldrh r3, [r3]
+    add r2, r2, r3
+    strh r0, [r2], #2 @ start address
+    strh r1, [r2], #2 @ count
+    mov r0, r2
+    bx lr
+
+@ r0 = buffer address
+end_vram_string:
+    eor r1, r1, r1
+    strh r1, [r0]
+    ldr r1, =vram_buffer
+    sub r0, r0, r1
+    ldr r1, =vram_buffer_offset
+    str r0, [r1]
+    bx lr
+
+@ r0 = source address
+@ r1 = destination address
+@ r2 = size in words
+memcpy32:
     bx lr
 
 vblank_handler:
@@ -161,6 +310,8 @@ main_handler_jump_table:
 .word main_handler_1
 
 main_handler_0:
+    bx lr
+
     ldr r0, =VIDEO_BUFFER
     ldr r1, =image_data
     ldr r2, =64
@@ -194,17 +345,124 @@ main_handler_1:
     eor r2, r2, #8 @ toggle channel 4
     1: @ right_not_pressed
     strb r2, [r1]
-
-    ldr r0, =VIDEO_BUFFER
-    ldr r1, =image_data
-    ldr r2, =64
-1:
-    ldrh r3, [r1], #2
-    eor r3, r3, #0xFF
-    strh r3, [r0], #2
-    subs r2, r2, #1
-    bne 1b
     bx lr
+
+.rodata:
+.align 4
+zero: .word 0
+
+bg_tiles:
+.incbin "font.bin"
+bg_tiles_end:
+
+bg_palettes:
+@ 0 - scenery and letters
+.hword 0b0111110000000000
+.hword 0b0000000000000000
+.hword 0b0111111000010000
+.hword 0b0111111111111111
+@ 1 - flag
+.hword 0b0000000000000000
+.hword 0b0000000000011111
+.hword 0b0101000000000000
+.hword 0b0111111111111111
+@ 2 - orb
+.hword 0b0111110000000000
+.hword 0b0111111000011111
+.hword 0b0011110100001111
+.hword 0b0001000100000010
+bg_palettes_end:
+
+.equ CHAR_SPACE, 0x00
+.equ CHAR_EXCL, 0x01
+.equ CHAR_BSOL, 0x02
+.equ CHAR_NUM, 0x03
+.equ CHAR_DOLLAR, 0x04
+.equ CHAR_PERCNT, 0x05
+.equ CHAR_AMP, 0x06
+.equ CHAR_APOS, 0x07
+.equ CHAR_LPAREN, 0x08
+.equ CHAR_RPAREN, 0x09
+.equ CHAR_AST, 0x0A
+.equ CHAR_PLUS, 0x0B
+.equ CHAR_COMMA, 0x0C
+.equ CHAR_MINUS, 0x0D
+.equ CHAR_PERIOD, 0x0E
+.equ CHAR_SOL, 0x0F
+.equ CHAR_COLON, 0x1A
+.equ CHAR_0, 0x10
+.equ CHAR_1, 0x11
+.equ CHAR_2, 0x12
+.equ CHAR_3, 0x13
+.equ CHAR_4, 0x14
+.equ CHAR_5, 0x15
+.equ CHAR_6, 0x16
+.equ CHAR_7, 0x17
+.equ CHAR_8, 0x18
+.equ CHAR_9, 0x19
+.equ CHAR_A, 0x21
+.equ CHAR_B, 0x22
+.equ CHAR_C, 0x23
+.equ CHAR_D, 0x24
+.equ CHAR_E, 0x25
+.equ CHAR_F, 0x26
+.equ CHAR_G, 0x27
+.equ CHAR_H, 0x28
+.equ CHAR_I, 0x29
+.equ CHAR_J, 0x2A
+.equ CHAR_K, 0x2B
+.equ CHAR_L, 0x2C
+.equ CHAR_M, 0x2D
+.equ CHAR_N, 0x2E
+.equ CHAR_O, 0x2F
+.equ CHAR_P, 0x30
+.equ CHAR_Q, 0x31
+.equ CHAR_R, 0x32
+.equ CHAR_S, 0x33
+.equ CHAR_T, 0x34
+.equ CHAR_U, 0x35
+.equ CHAR_V, 0x36
+.equ CHAR_W, 0x37
+.equ CHAR_X, 0x38
+.equ CHAR_Y, 0x39
+.equ CHAR_Z, 0x3A
+.equ CHAR_a, 0x41
+.equ CHAR_b, 0x42
+.equ CHAR_c, 0x43
+.equ CHAR_d, 0x44
+.equ CHAR_e, 0x45
+.equ CHAR_f, 0x46
+.equ CHAR_g, 0x47
+.equ CHAR_h, 0x48
+.equ CHAR_i, 0x49
+.equ CHAR_j, 0x4A
+.equ CHAR_k, 0x4B
+.equ CHAR_l, 0x4C
+.equ CHAR_m, 0x4D
+.equ CHAR_n, 0x4E
+.equ CHAR_o, 0x4F
+.equ CHAR_p, 0x50
+.equ CHAR_q, 0x51
+.equ CHAR_r, 0x52
+.equ CHAR_s, 0x53
+.equ CHAR_t, 0x54
+.equ CHAR_u, 0x55
+.equ CHAR_v, 0x56
+.equ CHAR_w, 0x57
+.equ CHAR_x, 0x58
+.equ CHAR_y, 0x59
+.equ CHAR_z, 0x5A
+
+bg_tilemap:
+.hword 0x1090,14,CHAR_S,CHAR_u,CHAR_p,CHAR_e,CHAR_r,CHAR_SPACE,CHAR_M,CHAR_a,CHAR_r,CHAR_i,CHAR_o,CHAR_SPACE,CHAR_6,CHAR_4
+.hword 0x1114,10,CHAR_M,CHAR_a,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_T,CHAR_h,CHAR_e,CHAR_m,CHAR_e
+.hword 0x118a,21,CHAR_LPAREN,CHAR_B,CHAR_o,CHAR_b,CHAR_MINUS,CHAR_o,CHAR_m,CHAR_b,CHAR_SPACE,CHAR_B,CHAR_a,CHAR_t,CHAR_t,CHAR_l,CHAR_e,CHAR_f,CHAR_i,CHAR_e,CHAR_l,CHAR_d,CHAR_RPAREN
+
+.hword 0x1292,12,CHAR_O,CHAR_r,CHAR_i,CHAR_g,CHAR_i,CHAR_n,CHAR_a,CHAR_l,CHAR_SPACE,CHAR_b,CHAR_y,CHAR_COLON
+.hword 0x1314,10,CHAR_K,CHAR_o,CHAR_j,CHAR_i,CHAR_SPACE,CHAR_K,CHAR_o,CHAR_n,CHAR_d,CHAR_o
+
+.hword 0x140e,17,CHAR_R,CHAR_e,CHAR_m,CHAR_i,CHAR_x,CHAR_e,CHAR_d,CHAR_SPACE,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_N,CHAR_o,CHAR_r,CHAR_w,CHAR_a,CHAR_y
+.hword 0
 
 .extern image_data
 .extern init_sound

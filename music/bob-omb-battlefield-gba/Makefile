@@ -8,7 +8,7 @@ OBJECTS = main.o sound_engine.o image_data.o song_instrument_table.o song_data.o
 $(PROGRAM).elf: $(OBJECTS) gba.ld
 	arm-none-eabi-ld -T gba.ld -o $(PROGRAM).elf $(OBJECTS) -Map=$(PROGRAM).map
 
-main.o: main.s
+main.o: main.s font.bin
 	arm-none-eabi-as -o $@ $<
 
 sound_engine.o: sound_engine.s
