@@ -133,7 +133,7 @@ materialize sound in the new engine.
 
 I decided to separate the sound engine into its [own assembly file](https://github.com/khansen/gbdev/blob/master/music/bob-omb-battlefield-gba/sound_engine.s)
 this time, so that it can be assembled independently of the rest of the program
-(graphics code, etc.).
+(song data, graphics code, etc.).
 
 ## Step 2: xm2gba
 
@@ -331,7 +331,7 @@ There is 1 byte of padding to make the structure 32 bytes long (multiple of 4).
 
 ### Indexed addressing modes
 
-I'm sure you all remember from the video about the N.E.S. to Game Boy port that
+I'm sure you all remember from the video about the NES to Game Boy port that
 my biggest gripe with the Game Boy CPU is that it doesn't have any indexed
 addressing modes, either by register or by constant offset.
 Fortunately, the GBA CPU supports both! This meant that I didn't have to spend
