@@ -9,6 +9,8 @@ found at https://github.com/khansen/gbdev/tree/master/music (used in recordings
 of songs posted on my [YouTube channel](https://www.youtube.com/@notube4me/videos))
 to the Game Boy Advance (GBA).
 
+You can find a video version of this article [on YouTube](https://youtu.be/l8JL5JwYCZo).
+
 How the original NES sound engine was ported to Game Boy was described in
 [this article](https://github.com/khansen/gbdev/blob/master/articles/porting-nes-sound-engine/index.md).
 It is assumed that the reader is already familiar with that material (the
