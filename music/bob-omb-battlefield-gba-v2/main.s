@@ -1,15 +1,6 @@
 .equ IWRAM_START,  0x03000000
 
-.equ DMA3_SRC,     0x040000D4
-.equ DMA3_DEST,    0x040000D8
-.equ DMA3_CNT,     0x040000DC
-
-.equ DMA_ENABLE,   (1 << 31)
-.equ DMA_START_NOW,(0 << 28)
-.equ DMA_32BIT,    (1 << 26)
-.equ DMA_SRC_INC,  (0 << 23)
-.equ DMA_SRC_FIXED,(2 << 23)
-.equ DMA_DST_INC,  (0 << 21)
+.include "dma_constants.s"
 
 .section .bss
 .align 4
@@ -189,18 +180,6 @@ cpu_mem_fill:
     str r0, [r1], #4
     subs r2, r2, #1
     bne cpu_mem_fill
-    bx lr
-
-@ r0 = source address
-@ r1 = destination address
-@ r2 = count
-dma3:
-    ldr r3, =DMA3_SRC
-    str r0, [r3]
-    ldr r3, =DMA3_DEST
-    str r1, [r3]
-    ldr r3, =DMA3_CNT
-    str r2, [r3]
     bx lr
 
 read_key_input:
@@ -495,6 +474,7 @@ bg_tilemap:
 .hword 0x140e,17,CHAR_R,CHAR_e,CHAR_m,CHAR_i,CHAR_x,CHAR_e,CHAR_d,CHAR_SPACE,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_N,CHAR_o,CHAR_r,CHAR_w,CHAR_a,CHAR_y
 .hword 0
 
+.extern dma3
 .extern image_data
 .extern init_sound
 .extern song_song

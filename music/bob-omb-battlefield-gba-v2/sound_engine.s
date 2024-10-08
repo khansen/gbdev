@@ -1,3 +1,5 @@
+.include "dma_constants.s"
+
 .equ TRACK_PATTERN_PTR_WORD,    0
 .equ TRACK_ENVELOPE_PTR_WORD,   4
 .equ TRACK_SAMPLE_POS_WORD,     8
@@ -113,42 +115,61 @@ volume_table:
 .byte 0x00,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E
 .byte 0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F
 
+@ TODO: Create all step files for noise. Currently only 42048 is supported.
 .ifdef MIXER_FREQ_5734
     .include "square_step_table_256_5734.inc"
     .include "noise_15bit_lfsr_step_table_2048_5734.inc"
-    .include "noise_7bit_lfsr_step_table_2048_5734.inc"
+    .include "noise_7bit_lfsr_step_table_64_5734.inc"
 .else
     .ifdef MIXER_FREQ_10512
         .include "square_step_table_256_10512.inc"
+        .include "noise_15bit_lfsr_step_table_2048_.inc"
+        .include "noise_7bit_lfsr_step_table_64_.inc"
     .else
         .ifdef MIXER_FREQ_13379
             .include "square_step_table_256_13379.inc"
+            .include "noise_15bit_lfsr_step_table_2048_13379.inc"
+            .include "noise_7bit_lfsr_step_table_64_13379.inc"
         .else
             .ifdef MIXER_FREQ_18157
                 .include "square_step_table_256_18157.inc"
+                .include "noise_15bit_lfsr_step_table_2048_18157.inc"
+                .include "noise_7bit_lfsr_step_table_64_18157.inc"
             .else
                 .ifdef MIXER_FREQ_21024
                     .include "square_step_table_256_21024.inc"
+                    .include "noise_15bit_lfsr_step_table_2048_21024.inc"
+                    .include "noise_7bit_lfsr_step_table_64_21024.inc"
                 .else
                     .ifdef MIXER_FREQ_26758
                         .include "square_step_table_256_26758.inc"
+                        .include "noise_15bit_lfsr_step_table_2048_26758.inc"
+                        .include "noise_7bit_lfsr_step_table_64_26758.inc"
                     .else
                         .ifdef MIXER_FREQ_31536
                             .include "square_step_table_256_31536.inc"
+                            .include "noise_15bit_lfsr_step_table_2048_31536.inc"
+                            .include "noise_7bit_lfsr_step_table_64_31536.inc"
                         .else
                             .ifdef MIXER_FREQ_36314
                                 .include "square_step_table_256_36314.inc"
+                                .include "noise_15bit_lfsr_step_table_2048_36314.inc"
+                                .include "noise_7bit_lfsr_step_table_64_36314.inc"
                             .else
                                 .ifdef MIXER_FREQ_40137
                                     .include "square_step_table_256_40137.inc"
+                                    .include "noise_15bit_lfsr_step_table_2048_40137.inc"
+                                    .include "noise_7bit_lfsr_step_table_64_40137.inc"
                                 .else
                                     .ifdef MIXER_FREQ_42048
                                         .include "square_step_table_256_42048.inc"
                                         .include "noise_15bit_lfsr_step_table_2048_42048.inc"
-                                        .include "noise_7bit_lfsr_step_table_2048_42048.inc"
+                                        .include "noise_7bit_lfsr_step_table_64_42048.inc"
                                     .else
                                         .ifdef MIXER_FREQ_43959
                                             .include "square_step_table_256_43959.inc"
+                                            .include "noise_15bit_lfsr_step_table_2048_43959.inc"
+                                            .include "noise_7bit_lfsr_step_table_64_43959.inc"
                                         .else
                                             .error "One of MIXER_FREQ_xxx must be defined."
                                         .endif
@@ -174,7 +195,7 @@ default_wav_ram:
 .byte 0x11, 0x23, 0x56, 0x78, 0xa9, 0x98, 0x76, 0x57
 .byte 0x9a, 0xdf, 0xfe, 0xc9, 0x85, 0x42, 0x11, 0x31
 
-square_sample_data:
+square_sample_data_rom:
 @ wave 00
 .byte -120, -119, -118, -117, -116, -115, -114, -113, -112, -111, -110, -109, -108, -107, -106, -105
 .byte -104, -104, -103, -102, -101, -100, -99, -98, -97, -96, -95, -94, -93, -92, -91, -90
@@ -226,6 +247,7 @@ square_sample_data:
 .byte -121, -121, -120, -119, -118, -118, -117, -116, -115, -114, -113, -112, -111, -110, -109, -108
 .byte -107, -106, -105, -103, -102, -101, -100, -98, -97, -96, -94, -93, -92, -90, -89, -87
 .byte -86, -84, -83, -82, -80, -78, -77, -75, -74, -72, -71, -69, -68, -66, -65, -63
+square_sample_data_rom_end:
 
 .section .bss
 .align 4
@@ -283,10 +305,9 @@ tracks: .space NUM_TRACKS * TRACK_SIZEOF
 .endif
 
 .align 4
-@square_sample_data: .space SQUARE_SAMPLE_SIZE * 4
+square_sample_data_ram: .space SQUARE_SAMPLE_SIZE * 4
 sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
 current_mix_buffer: .space 4
-sample_pos: .space 4
 
 .align 4
 instrument_table_ptr: .space 4
@@ -302,6 +323,7 @@ shadow_nr32: .space 1
 .global start_song
 .global update_sound
 .global sound_status
+.extern dma3
 .extern jump_table
 .code 32
 
@@ -351,17 +373,9 @@ shadow_nr32: .space 1
     .endif
 .endif
 
-@ waveform channel freq = 4194304 / 4*8*(2048 - fdat) Hz - yes, it works!
-@ step = sample freq / FREQ
-@ hz * sample_size = total_bytes_per_second
-@ step = total_bytes_per_second / FREQ
-@ step = (261.63 * 32) / 42048 = 0.1991096
-  @ step = 0x000032f9
-
 init_sound:
     push {lr}
-    @ TODO: copy sample data to RAM
-    @bl generate_square_sample_data
+    bl copy_square_sample_data_from_rom_to_ram
 
     ldr r0, =SOUND_CONTROL_REGISTERS_BASE_ADDRESS
     ldr r1, =0x80
@@ -395,82 +409,12 @@ init_sound:
     pop {lr}
     bx lr
 
-generate_square_sample_data:
-    ldr r0, =square_sample_data
-    ldrb r1, =0x80 @ low
-    1:
-    strb r1, [r0], #1
-    add r1, r1, #1
-    cmp r1, #0x180
-    bne 1b
-    ldrb r1, =0x80 @ low
-    1:
-    strb r1, [r0], #1
-    add r1, r1, #1
-    cmp r1, #0x180
-    bne 1b
-    ldrb r1, =0x80 @ low
-    1:
-    strb r1, [r0], #1
-    add r1, r1, #1
-    cmp r1, #0x180
-    bne 1b
-    ldrb r1, =0x80 @ low
-    1:
-    strb r1, [r0], #1
-    add r1, r1, #1
-    cmp r1, #0x180
-    bne 1b
-    bx lr
-
-    @ duty cycle 00 (12.5%)
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 2)
-    1:
-    strb r1, [r0], #1 @ high
-    subs r3, r3, #1
-    bne 1b
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 14)
-    1:
-    strb r2, [r0], #1 @ low
-    subs r3, r3, #1
-    bne 1b
-
-    @ duty cycle 01 (25.0%)
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 4)
-    1:
-    strb r1, [r0], #1 @ high
-    subs r3, r3, #1
-    bne 1b
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 12)
-    1:
-    strb r2, [r0], #1 @ low
-    subs r3, r3, #1
-    bne 1b
-
-    @ duty cycle 10 (50.0%)
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 8)
-    1:
-    strb r1, [r0], #1 @ high
-    subs r3, r3, #1
-    bne 1b
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 8)
-    1:
-    strb r2, [r0], #1 @ low
-    subs r3, r3, #1
-    bne 1b
-
-    @ duty cycle 11 (75.0%)
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 12)
-    1:
-    strb r1, [r0], #1 @ high
-    subs r3, r3, #1
-    bne 1b
-    ldr r3, =((SQUARE_SAMPLE_SIZE/16) * 4)
-    1:
-    strb r2, [r0], #1 @ low
-    subs r3, r3, #1
-    bne 1b
-    bx lr
+copy_square_sample_data_from_rom_to_ram:
+    ldr r0, =square_sample_data_rom
+    ldr r1, =square_sample_data_ram
+    mov r2, #((square_sample_data_rom_end - square_sample_data_rom) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    b dma3
 
 @ r0 = pointer to song
 start_song:
@@ -802,13 +746,13 @@ write_channel3_registers__not_muted:
 mix_sound:
     push {lr}
     @ TODO: copy mixer code to RAM and run it from there
-    bl mix_sound_channel1_and_2
-    bl mix_sound_channel4
+    bl mix_sound_channel1_and_2_rom
+    bl mix_sound_channel4_rom
     pop {lr}
     bx lr
 
 @ Channels 1 and 2 are mixed in one pass to avoid double traverse of mix buffer.
-mix_sound_channel1_and_2:
+mix_sound_channel1_and_2_rom:
     ldr r0, =tracks
     @ set up channel 1 in registers r1, r2, r3, r4
     ldr r1, =sound_status
@@ -822,7 +766,7 @@ mix_sound_channel1_and_2:
     ldrb r2, [r0, #TRACK_MASTERVOL_BYTE]
     mul r4, r3, r2 @ volume
 
-    ldr r3, =square_sample_data
+    ldr r3, =square_sample_data_ram
     ldrb r1, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
     tst r1, #3
     bne 1f @ if counter is non-zero, use duty from bits 6-7
@@ -853,7 +797,7 @@ mix_sound_channel1_and_2:
     ldrb r6, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*1)]
     mul r8, r7, r6 @ volume
 
-    ldr r7, =square_sample_data
+    ldr r7, =square_sample_data_ram
     ldrb r5, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
     tst r5, #3
     bne 1f @ if counter is non-zero, use duty from bits 6-7
@@ -925,8 +869,9 @@ mix_sound_channel1_and_2:
     strb r2, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
     4: @ skip_duty_update
     bx lr
+mix_sound_channel1_and_2_rom_end:
 
-mix_sound_channel4:
+mix_sound_channel4_rom:
     ldr r0, =tracks
     ldr r1, =sound_status
     ldrb r1, [r1]
@@ -979,6 +924,7 @@ mix_sound_channel4:
     ldr r0, =tracks
     str r1, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*3)]
     bx lr
+mix_sound_channel4_rom_end:
 
 @@@@@@@@ effects @@@@@@@
 

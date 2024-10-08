@@ -3,15 +3,18 @@ PROGRAM = BobOmbBattlefield
 $(PROGRAM).gba: $(PROGRAM).elf
 	arm-none-eabi-objcopy -O binary $(PROGRAM).elf $(PROGRAM).gba
 
-OBJECTS = main.o sound_engine.o image_data.o song_instrument_table.o song_data.o
+OBJECTS = main.o dma.o sound_engine.o image_data.o song_instrument_table.o song_data.o
 
 $(PROGRAM).elf: $(OBJECTS) gba.ld
 	arm-none-eabi-ld -T gba.ld -o $(PROGRAM).elf $(OBJECTS) -Map=$(PROGRAM).map
 
-main.o: main.s font.bin
+main.o: main.s dma_constants.s font.bin
 	arm-none-eabi-as -o $@ $<
 
-sound_engine.o: sound_engine.s square_step_table_256_42048.inc
+dma.o: dma.s
+	arm-none-eabi-as -o $@ $<
+
+sound_engine.o: sound_engine.s square_step_table_256_42048.inc dma_constants.s
 	arm-none-eabi-as -o $@ $<
 
 image_data.o: image_data.s
