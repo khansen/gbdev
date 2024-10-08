@@ -307,6 +307,8 @@ tracks: .space NUM_TRACKS * TRACK_SIZEOF
 .align 4
 @ Sample data is copied to RAM because it's much faster to access.
 square_sample_data_ram: .space SQUARE_SAMPLE_SIZE * 4
+noise_7bit_lfsr_sample_data_ram: .space NOISE_7BIT_LFSR_SAMPLE_SIZE
+noise_15bit_lfsr_sample_data_ram: .space NOISE_15BIT_LFSR_SAMPLE_SIZE
 
 sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
 current_mix_buffer: .space 4
@@ -514,13 +516,13 @@ mix_sound_channel4_rom:
     mul r4, r3, r2
 
     ldr r2, =noise_15bit_lfsr_step_table
-    ldr r3, =noise_15bit_lfsr_sample_data
+    ldr r3, =noise_15bit_lfsr_sample_data_ram
     ldr r8, =(NOISE_15BIT_LFSR_SAMPLE_SIZE-1)
     ldrb r1, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*3)]
     tst r1, #0x80 @ LFSR width
     beq 1f @ no_regular_output
     ldr r2, =noise_7bit_lfsr_step_table
-    ldr r3, =noise_7bit_lfsr_sample_data
+    ldr r3, =noise_7bit_lfsr_sample_data_ram
     ldr r8, =(NOISE_7BIT_LFSR_SAMPLE_SIZE-1)
     1: @ no_regular_output
 
@@ -559,6 +561,8 @@ mix_sound_channel4_rom_end:
 init_sound:
     push {lr}
     bl copy_square_sample_data_from_rom_to_ram
+    bl copy_noise_7bit_lfsr_sample_data_from_rom_to_ram
+    bl copy_noise_15bit_lfsr_sample_data_from_rom_to_ram
     bl copy_mix_sound_channel1_and_2_from_rom_to_ram
     bl copy_mix_sound_channel4_from_rom_to_ram
 
@@ -598,6 +602,20 @@ copy_square_sample_data_from_rom_to_ram:
     ldr r0, =square_sample_data_rom
     ldr r1, =square_sample_data_ram
     mov r2, #((square_sample_data_rom_end - square_sample_data_rom) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    b dma3
+
+copy_noise_7bit_lfsr_sample_data_from_rom_to_ram:
+    ldr r0, =noise_7bit_lfsr_sample_data_rom
+    ldr r1, =noise_7bit_lfsr_sample_data_ram
+    mov r2, #((noise_7bit_lfsr_sample_data_rom_end - noise_7bit_lfsr_sample_data_rom) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    b dma3
+
+copy_noise_15bit_lfsr_sample_data_from_rom_to_ram:
+    ldr r0, =noise_15bit_lfsr_sample_data_rom
+    ldr r1, =noise_15bit_lfsr_sample_data_ram
+    mov r2, #((noise_15bit_lfsr_sample_data_rom_end - noise_15bit_lfsr_sample_data_rom) / 4)
     orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
     b dma3
 
