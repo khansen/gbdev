@@ -305,9 +305,15 @@ tracks: .space NUM_TRACKS * TRACK_SIZEOF
 .endif
 
 .align 4
+@ Sample data is copied to RAM because it's much faster to access.
 square_sample_data_ram: .space SQUARE_SAMPLE_SIZE * 4
+
 sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
 current_mix_buffer: .space 4
+
+@ "Hot" mixer code is copied to RAM because it's much faster to execute.
+mix_sound_channel1_and_2_ram: .space (mix_sound_channel1_and_2_rom_end - mix_sound_channel1_and_2_rom)
+mix_sound_channel4_ram: .space (mix_sound_channel4_rom_end - mix_sound_channel4_rom)
 
 .align 4
 instrument_table_ptr: .space 4
@@ -373,9 +379,188 @@ shadow_nr32: .space 1
     .endif
 .endif
 
+@ Channels 1 and 2 are mixed in one pass to avoid double traverse of mix buffer.
+mix_sound_channel1_and_2_rom:
+    ldr r0, =tracks
+    @ set up channel 1 in registers r1, r2, r3, r4
+    ldr r1, =sound_status
+    ldrb r1, [r1]
+    tst r1, #1 @ channel 1 muted?
+    ldr r1, =master_vol
+    ldrb r1, [r1]
+    movne r1, #0
+    ldrb r2, [r0, #TRACK_ENVELOPE_VOL_BYTE]
+    mul r3, r1, r2
+    ldrb r2, [r0, #TRACK_MASTERVOL_BYTE]
+    mul r4, r3, r2 @ volume
+
+    ldr r3, =square_sample_data_ram
+    ldrb r1, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
+    tst r1, #3
+    bne 1f @ if counter is non-zero, use duty from bits 6-7
+    and r1, r1, #0x30 @ use duty from bits 4-5
+    lsl r1, r1, #4 @ must correspond to SQUARE_SAMPLE_SIZE
+    b 2f
+    1:
+    and r1, r1, #0xc0 @ use duty from bits 6-7
+    lsl r1, r1, #2 @ must correspond to SQUARE_SAMPLE_SIZE
+    2:
+    add r3, r3, r1 @ sample data pointer
+
+    ldrh r1, [r0, #TRACK_PERIOD_HWORD]
+    ldr r2, =square_step_table
+    ldr r2, [r2, r1, lsl #2] @ convert period to sample step
+
+    ldr r1, [r0, #TRACK_SAMPLE_POS_WORD]
+
+    @ set up channel 2 in registers r5, r6, r7, r8
+    ldr r5, =sound_status
+    ldrb r5, [r5]
+    tst r5, #2 @ channel 2 muted?
+    ldr r5, =master_vol
+    ldrb r5, [r5]
+    movne r5, #0
+    ldrb r6, [r0, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*1)]
+    mul r7, r5, r6
+    ldrb r6, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*1)]
+    mul r8, r7, r6 @ volume
+
+    ldr r7, =square_sample_data_ram
+    ldrb r5, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
+    tst r5, #3
+    bne 1f @ if counter is non-zero, use duty from bits 6-7
+    and r5, r5, #0x30 @ use duty from bits 4-5
+    lsl r5, r5, #4 @ must correspond to SQUARE_SAMPLE_SIZE
+    b 2f
+    1:
+    and r5, r5, #0xc0 @ use duty from bits 6-7
+    lsl r5, r5, #2 @ must correspond to SQUARE_SAMPLE_SIZE
+    2:
+    add r7, r7, r5 @ sample data pointer
+
+    ldrh r5, [r0, #(TRACK_PERIOD_HWORD + TRACK_SIZEOF*1)]
+    ldr r6, =square_step_table
+    ldr r6, [r6, r5, lsl #2] @ convert period to sample step
+
+    ldr r5, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*1)]
+
+    @ prepare to loop
+    ldr r0, =current_mix_buffer
+    ldr r0, [r0]
+    ldr r9, =SOUND_BUFFER_SIZE
+
+    3: @ loop
+    lsr r10, r1, #16 @ integer part of channel 1 sample pos
+    and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
+    ldrsb r10, [r3, r10] @ get channel 1 signed sample byte
+    mul r11, r4, r10
+    asr r11, r11, #26
+
+    lsr r10, r5, #16 @ integer part of channel 2 sample pos
+    and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
+    ldrsb r10, [r7, r10] @ get channel 2 signed sample byte
+    mul r12, r8, r10
+    asr r12, r12, #26
+
+    add r11, r11, r12
+
+    @ clamp
+    cmp r11, #127
+    movgt r11, #127
+    cmp r11, #-128
+    movlt r11, #-128
+
+    strb r11, [r0], #1 @ output sample
+
+    add r1, r1, r2 @ add step to channel 1 sample pos
+    add r5, r5, r6 @ add step to channel 2 sample pos
+    subs r9, r9, #1
+    bne 3b
+
+    ldr r0, =tracks
+    str r1, [r0, #TRACK_SAMPLE_POS_WORD]
+    str r5, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*1)]
+
+    @ update square 1 duty
+    ldrb r2, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
+    tst r2, #3
+    beq 4f @ skip_duty_update
+    sub r2, r2, #1
+    strb r2, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
+    4: @ skip_duty_update
+
+    @ update square 2 duty
+    ldrb r2, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
+    tst r2, #3
+    beq 4f @ skip_duty_update
+    sub r2, r2, #1
+    strb r2, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
+    4: @ skip_duty_update
+    bx lr
+.ltorg
+mix_sound_channel1_and_2_rom_end:
+
+mix_sound_channel4_rom:
+    ldr r0, =tracks
+    ldr r1, =sound_status
+    ldrb r1, [r1]
+    tst r1, #8 @ channel muted?
+    ldr r1, =master_vol
+    ldrb r1, [r1]
+    movne r1, #0
+    ldrb r2, [r0, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*3)]
+    mul r3, r1, r2
+    ldrb r2, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*3)]
+    mul r4, r3, r2
+
+    ldr r2, =noise_15bit_lfsr_step_table
+    ldr r3, =noise_15bit_lfsr_sample_data
+    ldr r8, =(NOISE_15BIT_LFSR_SAMPLE_SIZE-1)
+    ldrb r1, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*3)]
+    tst r1, #0x80 @ LFSR width
+    beq 1f @ no_regular_output
+    ldr r2, =noise_7bit_lfsr_step_table
+    ldr r3, =noise_7bit_lfsr_sample_data
+    ldr r8, =(NOISE_7BIT_LFSR_SAMPLE_SIZE-1)
+    1: @ no_regular_output
+
+    ldrh r1, [r0, #(TRACK_PERIOD_HWORD + TRACK_SIZEOF*3)]
+    lsr r1, r1, #6 @ divide by 64
+    ldr r2, [r2, r1, lsl #2] @ convert period to sample step
+
+    ldr r1, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*3)]
+
+    ldr r0, =current_mix_buffer
+    ldr r0, [r0]
+    ldr r5, =SOUND_BUFFER_SIZE
+    3:
+    lsr r6, r1, #16 @ integer part of sample pos
+    and r6, r6, r8
+    ldrsb r6, [r3, r6] @ get signed sample byte
+    mul r7, r4, r6
+    asr r7, r7, #26
+    ldrsb r6, [r0]
+    add r7, r7, r6
+    cmp r7, #127
+    movgt r7, #127
+    cmp r7, #-128
+    movlt r7, #-128
+    strb r7, [r0], #1
+    add r1, r1, r2 @ add step to sample pos
+    subs r5, r5, #1
+    bne 3b
+
+    ldr r0, =tracks
+    str r1, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*3)]
+    bx lr
+.ltorg
+mix_sound_channel4_rom_end:
+
 init_sound:
     push {lr}
     bl copy_square_sample_data_from_rom_to_ram
+    bl copy_mix_sound_channel1_and_2_from_rom_to_ram
+    bl copy_mix_sound_channel4_from_rom_to_ram
 
     ldr r0, =SOUND_CONTROL_REGISTERS_BASE_ADDRESS
     ldr r1, =0x80
@@ -413,6 +598,20 @@ copy_square_sample_data_from_rom_to_ram:
     ldr r0, =square_sample_data_rom
     ldr r1, =square_sample_data_ram
     mov r2, #((square_sample_data_rom_end - square_sample_data_rom) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    b dma3
+
+copy_mix_sound_channel1_and_2_from_rom_to_ram:
+    ldr r0, =mix_sound_channel1_and_2_rom
+    ldr r1, =mix_sound_channel1_and_2_ram
+    mov r2, #((mix_sound_channel1_and_2_rom_end - mix_sound_channel1_and_2_rom) / 4)
+    orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
+    b dma3
+
+copy_mix_sound_channel4_from_rom_to_ram:
+    ldr r0, =mix_sound_channel4_rom
+    ldr r1, =mix_sound_channel4_ram
+    mov r2, #((mix_sound_channel4_rom_end - mix_sound_channel4_rom) / 4)
     orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
     b dma3
 
@@ -745,186 +944,16 @@ write_channel3_registers__not_muted:
 
 mix_sound:
     push {lr}
-    @ TODO: copy mixer code to RAM and run it from there
-    bl mix_sound_channel1_and_2_rom
-    bl mix_sound_channel4_rom
+    adr lr, 1f
+    ldr r0, =mix_sound_channel1_and_2_ram
+    bx r0
+    1:
+    adr lr, 1f
+    ldr r0, =mix_sound_channel4_ram
+    bx r0
+    1:
     pop {lr}
     bx lr
-
-@ Channels 1 and 2 are mixed in one pass to avoid double traverse of mix buffer.
-mix_sound_channel1_and_2_rom:
-    ldr r0, =tracks
-    @ set up channel 1 in registers r1, r2, r3, r4
-    ldr r1, =sound_status
-    ldrb r1, [r1]
-    tst r1, #1 @ channel 1 muted?
-    ldr r1, =master_vol
-    ldrb r1, [r1]
-    movne r1, #0
-    ldrb r2, [r0, #TRACK_ENVELOPE_VOL_BYTE]
-    mul r3, r1, r2
-    ldrb r2, [r0, #TRACK_MASTERVOL_BYTE]
-    mul r4, r3, r2 @ volume
-
-    ldr r3, =square_sample_data_ram
-    ldrb r1, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
-    tst r1, #3
-    bne 1f @ if counter is non-zero, use duty from bits 6-7
-    and r1, r1, #0x30 @ use duty from bits 4-5
-    lsl r1, r1, #4 @ must correspond to SQUARE_SAMPLE_SIZE
-    b 2f
-    1:
-    and r1, r1, #0xc0 @ use duty from bits 6-7
-    lsl r1, r1, #2 @ must correspond to SQUARE_SAMPLE_SIZE
-    2:
-    add r3, r3, r1 @ sample data pointer
-
-    ldrh r1, [r0, #TRACK_PERIOD_HWORD]
-    ldr r2, =square_step_table
-    ldr r2, [r2, r1, lsl #2] @ convert period to sample step
-
-    ldr r1, [r0, #TRACK_SAMPLE_POS_WORD]
-
-    @ set up channel 2 in registers r5, r6, r7, r8
-    ldr r5, =sound_status
-    ldrb r5, [r5]
-    tst r5, #2 @ channel 2 muted?
-    ldr r5, =master_vol
-    ldrb r5, [r5]
-    movne r5, #0
-    ldrb r6, [r0, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*1)]
-    mul r7, r5, r6
-    ldrb r6, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*1)]
-    mul r8, r7, r6 @ volume
-
-    ldr r7, =square_sample_data_ram
-    ldrb r5, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
-    tst r5, #3
-    bne 1f @ if counter is non-zero, use duty from bits 6-7
-    and r5, r5, #0x30 @ use duty from bits 4-5
-    lsl r5, r5, #4 @ must correspond to SQUARE_SAMPLE_SIZE
-    b 2f
-    1:
-    and r5, r5, #0xc0 @ use duty from bits 6-7
-    lsl r5, r5, #2 @ must correspond to SQUARE_SAMPLE_SIZE
-    2:
-    add r7, r7, r5 @ sample data pointer
-
-    ldrh r5, [r0, #(TRACK_PERIOD_HWORD + TRACK_SIZEOF*1)]
-    ldr r6, =square_step_table
-    ldr r6, [r6, r5, lsl #2] @ convert period to sample step
-
-    ldr r5, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*1)]
-
-    @ prepare to loop
-    ldr r0, =current_mix_buffer
-    ldr r0, [r0]
-    ldr r9, =SOUND_BUFFER_SIZE
-
-    3: @ loop
-    lsr r10, r1, #16 @ integer part of channel 1 sample pos
-    and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
-    ldrsb r10, [r3, r10] @ get channel 1 signed sample byte
-    mul r11, r4, r10
-    asr r11, r11, #26
-
-    lsr r10, r5, #16 @ integer part of channel 2 sample pos
-    and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
-    ldrsb r10, [r7, r10] @ get channel 2 signed sample byte
-    mul r12, r8, r10
-    asr r12, r12, #26
-
-    add r11, r11, r12
-
-    @ clamp
-    cmp r11, #127
-    movgt r11, #127
-    cmp r11, #-128
-    movlt r11, #-128
-
-    strb r11, [r0], #1 @ output sample
-
-    add r1, r1, r2 @ add step to channel 1 sample pos
-    add r5, r5, r6 @ add step to channel 2 sample pos
-    subs r9, r9, #1
-    bne 3b
-
-    ldr r0, =tracks
-    str r1, [r0, #TRACK_SAMPLE_POS_WORD]
-    str r5, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*1)]
-
-    @ update square 1 duty
-    ldrb r2, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
-    tst r2, #3
-    beq 4f @ skip_duty_update
-    sub r2, r2, #1
-    strb r2, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
-    4: @ skip_duty_update
-
-    @ update square 2 duty
-    ldrb r2, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
-    tst r2, #3
-    beq 4f @ skip_duty_update
-    sub r2, r2, #1
-    strb r2, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
-    4: @ skip_duty_update
-    bx lr
-mix_sound_channel1_and_2_rom_end:
-
-mix_sound_channel4_rom:
-    ldr r0, =tracks
-    ldr r1, =sound_status
-    ldrb r1, [r1]
-    tst r1, #8 @ channel muted?
-    ldr r1, =master_vol
-    ldrb r1, [r1]
-    movne r1, #0
-    ldrb r2, [r0, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*3)]
-    mul r3, r1, r2
-    ldrb r2, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*3)]
-    mul r4, r3, r2
-
-    ldr r2, =noise_15bit_lfsr_step_table
-    ldr r3, =noise_15bit_lfsr_sample_data
-    ldr r8, =(NOISE_15BIT_LFSR_SAMPLE_SIZE-1)
-    ldrb r1, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*3)]
-    tst r1, #0x80 @ LFSR width
-    beq 1f @ no_regular_output
-    ldr r2, =noise_7bit_lfsr_step_table
-    ldr r3, =noise_7bit_lfsr_sample_data
-    ldr r8, =(NOISE_7BIT_LFSR_SAMPLE_SIZE-1)
-    1: @ no_regular_output
-
-    ldrh r1, [r0, #(TRACK_PERIOD_HWORD + TRACK_SIZEOF*3)]
-    lsr r1, r1, #6 @ divide by 64
-    ldr r2, [r2, r1, lsl #2] @ convert period to sample step
-
-    ldr r1, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*3)]
-
-    ldr r0, =current_mix_buffer
-    ldr r0, [r0]
-    ldr r5, =SOUND_BUFFER_SIZE
-    3:
-    lsr r6, r1, #16 @ integer part of sample pos
-    and r6, r6, r8
-    ldrsb r6, [r3, r6] @ get signed sample byte
-    mul r7, r4, r6
-    asr r7, r7, #26
-    ldrsb r6, [r0]
-    add r7, r7, r6
-    cmp r7, #127
-    movgt r7, #127
-    cmp r7, #-128
-    movlt r7, #-128
-    strb r7, [r0], #1
-    add r1, r1, r2 @ add step to sample pos
-    subs r5, r5, #1
-    bne 3b
-
-    ldr r0, =tracks
-    str r1, [r0, #(TRACK_SAMPLE_POS_WORD + TRACK_SIZEOF*3)]
-    bx lr
-mix_sound_channel4_rom_end:
 
 @@@@@@@@ effects @@@@@@@
 
