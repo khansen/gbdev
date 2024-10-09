@@ -1,6 +1,7 @@
 .equ IWRAM_START,  0x03000000
 
 .include "dma_constants.s"
+.include "track_constants.s"
 
 .section .bss
 .align 4
@@ -262,7 +263,7 @@ vblank_handler:
 
     bl update_sound
 
-    mov r0, #1
+    mov r0, #0
     ldr r1, =main_handler_jump_table
     bl jump_table
 
@@ -289,20 +290,6 @@ jump_table:
 .align 4
 main_handler_jump_table:
 .word main_handler_0
-.word main_handler_1
-
-main_handler_0:
-    bx lr
-
-    ldr r0, =VIDEO_BUFFER
-    ldr r1, =image_data
-    ldr r2, =64
-1:
-    ldrh r3, [r1], #2 
-    strh r3, [r0], #2
-    subs r2, r2, #1
-    bne 1b
-    bx lr
 
 mute_or_unmute_sound_channels:
     ldr r0, =keys_pressed
@@ -350,12 +337,175 @@ print_vcount:
     pop {lr}
     bx lr
 
-main_handler_1:
+draw_channel_indicators:
+    push {lr}
+    ldr r4, =tracks
+    @ upper half
+    ldr r0, =0x1414
+    ldr r1, =11 @ 2+1+2+1+2+1+2 tiles
+    bl begin_vram_string
+
+    @ channel 1
+    ldrb r2, [r4, #TRACK_EFFECTIVE_VOL_BYTE]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel1_blank_top
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x60
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel1_channel2_separator_top
+draw_channel_indicators__draw_channel1_blank_top:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel1_channel2_separator_top:
+    strh r2, [r0], #2 @ space
+
+    @ channel 2
+    ldrb r2, [r4, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*1)]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel2_blank_top
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x60
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel2_channel3_separator_top
+draw_channel_indicators__draw_channel2_blank_top:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel2_channel3_separator_top:
+    strh r2, [r0], #2 @ space
+
+    @channel 3
+    ldr r2, =sound_status
+    ldrb r2, [r2]
+    tst r2, #4 @ channel 3 muted?
+    ldrb r2, [r4, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*2)]
+    movne r2, #0
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel3_blank_top
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x60
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel3_channel4_separator_top
+draw_channel_indicators__draw_channel3_blank_top:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel3_channel4_separator_top:
+    strh r2, [r0], #2 @ space
+
+    @ channel 4
+    ldrb r2, [r4, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*3)]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel4_blank_top
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x60
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators__top_half_done
+draw_channel_indicators__draw_channel4_blank_top:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators__top_half_done:
+    bl end_vram_string
+
+    @ lower half
+    ldr r0, =0x1454
+    ldr r1, =11 @ 2+1+2+1+2+1+2 tiles
+    bl begin_vram_string
+
+    @ channel 1
+    ldrb r2, [r4, #TRACK_EFFECTIVE_VOL_BYTE]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel1_blank_bottom
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x61
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel1_channel2_separator_bottom
+draw_channel_indicators__draw_channel1_blank_bottom:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel1_channel2_separator_bottom:
+    strh r2, [r0], #2 @ space
+
+    @ channel 2
+    ldrb r2, [r4, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*1)]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel2_blank_bottom
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x61
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel2_channel3_separator_bottom
+draw_channel_indicators__draw_channel2_blank_bottom:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel2_channel3_separator_bottom:
+    strh r2, [r0], #2 @ space
+
+    @channel 3
+    ldr r2, =sound_status
+    ldrb r2, [r2]
+    tst r2, #4 @ channel 3 muted?
+    ldrb r2, [r4, #(TRACK_ENVELOPE_VOL_BYTE + TRACK_SIZEOF*2)]
+    movne r2, #0
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel3_blank_bottom
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x61
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators_draw_channel3_channel4_separator_bottom
+draw_channel_indicators__draw_channel3_blank_bottom:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators_draw_channel3_channel4_separator_bottom:
+    strh r2, [r0], #2 @ space
+
+    @ channel 4
+    ldrb r2, [r4, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*3)]
+    ands r2, r2, #0xe0
+    beq draw_channel_indicators__draw_channel4_blank_bottom
+    lsr r2, r2, #3 @ ball size (0..7) * 4
+    add r2, r2, #0x61
+    strh r2, [r0], #2
+    add r2, r2, #2
+    strh r2, [r0], #2
+    eor r2, r2, r2
+    b draw_channel_indicators__bottom_half_done
+draw_channel_indicators__draw_channel4_blank_bottom:
+    strh r2, [r0], #2 @ space
+    strh r2, [r0], #2 @ space
+draw_channel_indicators__bottom_half_done:
+    bl end_vram_string
+
+    pop {lr}
+    bx lr
+
+main_handler_0:
     push {lr}
     bl mute_or_unmute_sound_channels
+    bl draw_channel_indicators
     bl print_vcount
     pop {lr}
     bx lr
+
+.ltorg
 
 .rodata:
 .align 4
@@ -363,6 +513,7 @@ zero: .word 0
 
 bg_tiles:
 .incbin "font.bin"
+.incbin "ball.bin"
 bg_tiles_end:
 
 bg_palettes:
@@ -371,16 +522,16 @@ bg_palettes:
 .hword 0b0000000000000000
 .hword 0b0111111000010000
 .hword 0b0111111111111111
-@ 1 - flag
-.hword 0b0000000000000000
-.hword 0b0000000000011111
-.hword 0b0101000000000000
-.hword 0b0111111111111111
-@ 2 - orb
+@ 1 - orb
 .hword 0b0111110000000000
 .hword 0b0111111000011111
 .hword 0b0011110100001111
 .hword 0b0001000100000010
+@ 2 - flag
+.hword 0b0000000000000000
+.hword 0b0000000000011111
+.hword 0b0101000000000000
+.hword 0b0111111111111111
 bg_palettes_end:
 
 .equ CHAR_SPACE, 0x00
@@ -468,15 +619,17 @@ bg_tilemap:
 .hword 0x1114,10,CHAR_M,CHAR_a,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_T,CHAR_h,CHAR_e,CHAR_m,CHAR_e
 .hword 0x118a,21,CHAR_LPAREN,CHAR_B,CHAR_o,CHAR_b,CHAR_MINUS,CHAR_o,CHAR_m,CHAR_b,CHAR_SPACE,CHAR_B,CHAR_a,CHAR_t,CHAR_t,CHAR_l,CHAR_e,CHAR_f,CHAR_i,CHAR_e,CHAR_l,CHAR_d,CHAR_RPAREN
 
-.hword 0x1292,12,CHAR_O,CHAR_r,CHAR_i,CHAR_g,CHAR_i,CHAR_n,CHAR_a,CHAR_l,CHAR_SPACE,CHAR_b,CHAR_y,CHAR_COLON
-.hword 0x1314,10,CHAR_K,CHAR_o,CHAR_j,CHAR_i,CHAR_SPACE,CHAR_K,CHAR_o,CHAR_n,CHAR_d,CHAR_o
+.hword 0x1252,12,CHAR_O,CHAR_r,CHAR_i,CHAR_g,CHAR_i,CHAR_n,CHAR_a,CHAR_l,CHAR_SPACE,CHAR_b,CHAR_y,CHAR_COLON
+.hword 0x12D4,10,CHAR_K,CHAR_o,CHAR_j,CHAR_i,CHAR_SPACE,CHAR_K,CHAR_o,CHAR_n,CHAR_d,CHAR_o
 
-.hword 0x140e,17,CHAR_R,CHAR_e,CHAR_m,CHAR_i,CHAR_x,CHAR_e,CHAR_d,CHAR_SPACE,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_N,CHAR_o,CHAR_r,CHAR_w,CHAR_a,CHAR_y
+.hword 0x138e,17,CHAR_R,CHAR_e,CHAR_m,CHAR_i,CHAR_x,CHAR_e,CHAR_d,CHAR_SPACE,CHAR_i,CHAR_n,CHAR_SPACE,CHAR_N,CHAR_o,CHAR_r,CHAR_w,CHAR_a,CHAR_y
+
+.hword 0x1482,28,CHAR_U,CHAR_s,CHAR_e,CHAR_SPACE,CHAR_D,CHAR_MINUS,CHAR_p,CHAR_a,CHAR_d,CHAR_SPACE,CHAR_t,CHAR_o,CHAR_SPACE,CHAR_t,CHAR_o,CHAR_g,CHAR_g,CHAR_l,CHAR_e,CHAR_SPACE,CHAR_c,CHAR_h,CHAR_a,CHAR_n,CHAR_n,CHAR_e,CHAR_l,CHAR_s
 .hword 0
 
 .extern dma3
-.extern image_data
 .extern init_sound
 .extern song_song
 .extern start_song
+.extern tracks
 .extern sound_status

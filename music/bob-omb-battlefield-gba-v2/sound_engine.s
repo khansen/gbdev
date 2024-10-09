@@ -1,30 +1,5 @@
 .include "dma_constants.s"
-
-.equ TRACK_PATTERN_PTR_WORD,    0
-.equ TRACK_ENVELOPE_PTR_WORD,   4
-.equ TRACK_SAMPLE_POS_WORD,     8
-.equ TRACK_PERIOD_HWORD,        12
-.equ TRACK_EFFECT_PORTAMENTO_TARGETPERIOD_HWORD, 14
-.equ TRACK_SPEED_BYTE,          16
-.equ TRACK_TICK_BYTE,           17
-.equ TRACK_PATTERN_ROWCOUNT_BYTE, 18
-.equ TRACK_PATTERN_ROW_BYTE,    19
-.equ TRACK_PATTERN_ROWSTATUS_BYTE, 20
-.equ TRACK_ORDER_POS_BYTE,      21
-.equ TRACK_EFFECT_KIND_BYTE,    22
-.equ TRACK_EFFECT_PARAM_BYTE,   23
-.equ TRACK_EFFECT_POS_BYTE,     24
-.equ TRACK_EFFECT_PORTAMENTO_CTRL_BYTE, 25
-.equ TRACK_MASTERVOL_BYTE,      26
-.equ TRACK_PERIODINDEX_BYTE,    27
-.equ TRACK_SQUARE_DUTYCTRL_BYTE, 28
-.equ TRACK_ENVELOPE_PHASE_BYTE, 29
-.equ TRACK_ENVELOPE_POS_BYTE,   30
-.equ TRACK_ENVELOPE_VOL_BYTE,   31
-.equ TRACK_ENVELOPE_STEP_BYTE,  32
-.equ TRACK_ENVELOPE_DEST_BYTE,  33
-.equ TRACK_ENVELOPE_HOLD_BYTE,  34
-.equ TRACK_SIZEOF,              36
+.include "track_constants.s"
 
 .equ NUM_TRACKS, 4
 
@@ -330,6 +305,7 @@ shadow_nr32: .space 1
 .global init_sound
 .global start_song
 .global update_sound
+.global tracks
 .global sound_status
 .extern dma3
 .extern jump_table
@@ -395,6 +371,8 @@ mix_sound_channel1_and_2_rom:
     mul r3, r1, r2
     ldrb r2, [r0, #TRACK_MASTERVOL_BYTE]
     mul r4, r3, r2 @ volume
+    lsr r4, r4, #16
+    strb r4, [r0, #TRACK_EFFECTIVE_VOL_BYTE]
 
     ldr r3, =square_sample_data_ram
     ldrb r1, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
@@ -426,6 +404,8 @@ mix_sound_channel1_and_2_rom:
     mul r7, r5, r6
     ldrb r6, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*1)]
     mul r8, r7, r6 @ volume
+    lsr r8, r8, #16
+    strb r8, [r0, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*1)]
 
     ldr r7, =square_sample_data_ram
     ldrb r5, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
@@ -456,15 +436,12 @@ mix_sound_channel1_and_2_rom:
     and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
     ldrsb r10, [r3, r10] @ get channel 1 signed sample byte
     mul r11, r4, r10
-    asr r11, r11, #26
 
     lsr r10, r5, #16 @ integer part of channel 2 sample pos
     and r10, r10, #(SQUARE_SAMPLE_SIZE - 1)
     ldrsb r10, [r7, r10] @ get channel 2 signed sample byte
-    mul r12, r8, r10
-    asr r12, r12, #26
-
-    add r11, r11, r12
+    mla r11, r8, r10, r11
+    asr r11, r11, #10
 
     @ clamp
     cmp r11, #127
@@ -514,6 +491,8 @@ mix_sound_channel4_rom:
     mul r3, r1, r2
     ldrb r2, [r0, #(TRACK_MASTERVOL_BYTE + TRACK_SIZEOF*3)]
     mul r4, r3, r2
+    lsr r4, r4, #16
+    strb r4, [r0, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*3)]
 
     ldr r2, =noise_15bit_lfsr_step_table
     ldr r3, =noise_15bit_lfsr_sample_data_ram
@@ -540,7 +519,7 @@ mix_sound_channel4_rom:
     and r6, r6, r8
     ldrsb r6, [r3, r6] @ get signed sample byte
     mul r7, r4, r6
-    asr r7, r7, #26
+    asr r7, r7, #10
     ldrsb r6, [r0]
     add r7, r7, r6
     cmp r7, #127
