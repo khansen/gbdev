@@ -12,7 +12,9 @@
 
 - Install `arm-none-eabi-gcc`. On Mac, you can get it via Homebrew: `brew install --cask gcc-arm-embedded`
 - Clone the repository https://github.com/khansen/xm2nes/, check out the `xm2gba` branch, build and install the `xm2gba` tool
-- In a project folder (e.g., `music/bob-omb-battlefield-gba/`), run `make`
+- In a project folder (e.g., `music/bob-omb-battlefield-gba-v2/`), run `make`
+- Use a script like [header.py](https://github.com/Ankeraout/minimal-gba-project/blob/master/header.py) to fix the
+  checksum of the ROM file.
 
 ## Video recordings
 
@@ -21,6 +23,7 @@ To see the projects in action, visit https://www.youtube.com/notube4me
 ## Articles
 
 - [The process of porting an NES sound engine to Game Boy](https://github.com/khansen/gbdev/blob/master/articles/porting-nes-sound-engine/index.md)
+- [Porting a Game Boy sound engine to Game Boy Advance](https://github.com/khansen/gbdev/blob/master/articles/porting-gameboy-sound-engine/index.md)
 
 ## A selection of useful resources
 
