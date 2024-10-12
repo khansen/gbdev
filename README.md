@@ -24,6 +24,7 @@ To see the projects in action, visit https://www.youtube.com/notube4me
 
 - [The process of porting an NES sound engine to Game Boy](https://github.com/khansen/gbdev/blob/master/articles/porting-nes-sound-engine/index.md)
 - [Porting a Game Boy sound engine to Game Boy Advance](https://github.com/khansen/gbdev/blob/master/articles/porting-gameboy-sound-engine/index.md)
+- [Implementing an audio mixer for Game Boy Advance](https://github.com/khansen/gbdev/blob/master/articles/implementing-gba-sound-mixer/index.md)
 
 ## A selection of useful resources
 

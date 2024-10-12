@@ -549,7 +549,7 @@ that a different solution must be found for supporting precise volume control.
 
 ### What's next?
 
-- Determine whether "Zombie" mode exists on GBA SP.
-- Implement channels 1, 2, and 4 in a software mixer.
+- ~~Determine whether "Zombie" mode exists on GBA SP.~~ _Done!_
+- ~~Implement channels 1, 2, and 4 in a software mixer.~~ _Done! (October 14, 2024)_
 - Port the panning effect (8xx) implementation.
 - Add more fancy visualizations, like in the Game Boy programs.
