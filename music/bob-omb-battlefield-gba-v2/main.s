@@ -18,6 +18,7 @@ vram_buffer_offset: .space 2
 .global _start
 .global jump_table
 .code 32
+.cpu arm7tdmi
 
 _entry:
     b _start

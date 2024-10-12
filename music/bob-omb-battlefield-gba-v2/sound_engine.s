@@ -310,6 +310,7 @@ shadow_nr32: .space 1
 .extern dma3
 .extern jump_table
 .code 32
+.cpu arm7tdmi
 
 .ifdef MIXER_FREQ_5734
     .equ MIXER_TIMER_VALUE, 62610
