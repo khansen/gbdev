@@ -262,7 +262,19 @@ vblank_handler:
     @ TODO: copy sprites using DMA?
     bl read_key_input
 
+    ldr r0, =VCOUNT
+    ldrh r0, [r0]
+    push {r0}
+
     bl update_sound
+
+    ldr r1, =VCOUNT
+    ldrh r1, [r1]
+    pop {r0}
+    cmp r1, #160
+    addlt r1, r1, #228
+    sub r1, r1, r0
+    bl print_scanline_count
 
     mov r0, #0
     ldr r1, =main_handler_jump_table
@@ -316,13 +328,13 @@ mute_or_unmute_sound_channels:
     strb r2, [r1]
     bx lr
 
-print_vcount:
+print_scanline_count:
     push {lr}
+    push {r1}
     ldr r0, =0x1076
     ldr r1, =2
     bl begin_vram_string
-    ldr r1, =VCOUNT
-    ldrh r1, [r1]
+    pop {r1}
     and r2, r1, #0xf0
     lsr r2, r2, #4
     cmp r2, #9
@@ -502,7 +514,6 @@ main_handler_0:
     push {lr}
     bl mute_or_unmute_sound_channels
     bl draw_channel_indicators
-    bl print_vcount
     pop {lr}
     bx lr
 
