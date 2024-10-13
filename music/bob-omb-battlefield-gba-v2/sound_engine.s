@@ -15,6 +15,18 @@
 .equ noise_15bit_lfsr_sample_data, noise_15bit_lfsr_sample_data_rom
 .endif
 
+@ If COPY_MIXER_CODE_TO_RAM is not defined, the mixer code will run from ROM,
+@ which is a lot slower.
+.equ COPY_MIXER_CODE_TO_RAM, 1
+
+.ifdef COPY_MIXER_CODE_TO_RAM
+.equ mix_sound_channel1_and_2, mix_sound_channel1_and_2_ram
+.equ mix_sound_channel4, mix_sound_channel4_ram
+.else
+.equ mix_sound_channel1_and_2, mix_sound_channel1_and_2_rom
+.equ mix_sound_channel4, mix_sound_channel4_rom
+.endif
+
 .equ NUM_TRACKS, 4
 
 .equ INSTRUMENT_ENVELOPE_PTR_WORD, 0
@@ -295,6 +307,9 @@ tracks: .space NUM_TRACKS * TRACK_SIZEOF
 
 .align 4
 
+sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
+current_mix_buffer: .space 4
+
 .ifdef COPY_SAMPLE_DATA_TO_RAM
 @ Sample data is copied to RAM because it's much faster to access.
 square_sample_data_ram: .space SQUARE_SAMPLE_SIZE * 4
@@ -302,12 +317,11 @@ noise_7bit_lfsr_sample_data_ram: .space NOISE_7BIT_LFSR_SAMPLE_SIZE
 noise_15bit_lfsr_sample_data_ram: .space NOISE_15BIT_LFSR_SAMPLE_SIZE
 .endif
 
-sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
-current_mix_buffer: .space 4
-
+.ifdef COPY_MIXER_CODE_TO_RAM
 @ "Hot" mixer code is copied to RAM because it's much faster to execute.
 mix_sound_channel1_and_2_ram: .space (mix_sound_channel1_and_2_rom_end - mix_sound_channel1_and_2_rom)
 mix_sound_channel4_ram: .space (mix_sound_channel4_rom_end - mix_sound_channel4_rom)
+.endif
 
 .align 4
 instrument_table_ptr: .space 4
@@ -562,8 +576,10 @@ init_sound:
     bl copy_noise_7bit_lfsr_sample_data_from_rom_to_ram
     bl copy_noise_15bit_lfsr_sample_data_from_rom_to_ram
 .endif
+.ifdef COPY_MIXER_CODE_TO_RAM
     bl copy_mix_sound_channel1_and_2_from_rom_to_ram
     bl copy_mix_sound_channel4_from_rom_to_ram
+.endif
 
     ldr r0, =SOUND_CONTROL_REGISTERS_BASE_ADDRESS
     ldr r1, =0x80
@@ -620,6 +636,7 @@ copy_noise_15bit_lfsr_sample_data_from_rom_to_ram:
     b dma3
 .endif
 
+.ifdef COPY_MIXER_CODE_TO_RAM
 copy_mix_sound_channel1_and_2_from_rom_to_ram:
     ldr r0, =mix_sound_channel1_and_2_rom
     ldr r1, =mix_sound_channel1_and_2_ram
@@ -633,6 +650,7 @@ copy_mix_sound_channel4_from_rom_to_ram:
     mov r2, #((mix_sound_channel4_rom_end - mix_sound_channel4_rom) / 4)
     orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
     b dma3
+.endif
 
 @ r0 = pointer to song
 start_song:
@@ -964,11 +982,11 @@ write_channel3_registers__not_muted:
 mix_sound:
     push {lr}
     adr lr, 1f
-    ldr r0, =mix_sound_channel1_and_2_ram
+    ldr r0, =mix_sound_channel1_and_2
     bx r0
     1:
     adr lr, 1f
-    ldr r0, =mix_sound_channel4_ram
+    ldr r0, =mix_sound_channel4
     bx r0
     1:
     pop {lr}
