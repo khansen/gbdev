@@ -1,6 +1,20 @@
 .include "dma_constants.s"
 .include "track_constants.s"
 
+@ If COPY_SAMPLE_DATA_TO_RAM is not defined, the mixer will read sample data
+@ from ROM, which is a lot slower.
+.equ COPY_SAMPLE_DATA_TO_RAM, 1
+
+.ifdef COPY_SAMPLE_DATA_TO_RAM
+.equ square_sample_data, square_sample_data_ram
+.equ noise_7bit_lfsr_sample_data, noise_7bit_lfsr_sample_data_ram
+.equ noise_15bit_lfsr_sample_data, noise_15bit_lfsr_sample_data_ram
+.else
+.equ square_sample_data, square_sample_data_rom
+.equ noise_7bit_lfsr_sample_data, noise_7bit_lfsr_sample_data_rom
+.equ noise_15bit_lfsr_sample_data, noise_15bit_lfsr_sample_data_rom
+.endif
+
 .equ NUM_TRACKS, 4
 
 .equ INSTRUMENT_ENVELOPE_PTR_WORD, 0
@@ -280,10 +294,13 @@ tracks: .space NUM_TRACKS * TRACK_SIZEOF
 .endif
 
 .align 4
+
+.ifdef COPY_SAMPLE_DATA_TO_RAM
 @ Sample data is copied to RAM because it's much faster to access.
 square_sample_data_ram: .space SQUARE_SAMPLE_SIZE * 4
 noise_7bit_lfsr_sample_data_ram: .space NOISE_7BIT_LFSR_SAMPLE_SIZE
 noise_15bit_lfsr_sample_data_ram: .space NOISE_15BIT_LFSR_SAMPLE_SIZE
+.endif
 
 sound_buffer_data: .space SOUND_BUFFER_SIZE * 2
 current_mix_buffer: .space 4
@@ -375,7 +392,7 @@ mix_sound_channel1_and_2_rom:
     lsr r4, r4, #16
     strb r4, [r0, #TRACK_EFFECTIVE_VOL_BYTE]
 
-    ldr r3, =square_sample_data_ram
+    ldr r3, =square_sample_data
     ldrb r1, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
     tst r1, #3
     bne 1f @ if counter is non-zero, use duty from bits 6-7
@@ -408,7 +425,7 @@ mix_sound_channel1_and_2_rom:
     lsr r8, r8, #16
     strb r8, [r0, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*1)]
 
-    ldr r7, =square_sample_data_ram
+    ldr r7, =square_sample_data
     ldrb r5, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*1)]
     tst r5, #3
     bne 1f @ if counter is non-zero, use duty from bits 6-7
@@ -496,13 +513,13 @@ mix_sound_channel4_rom:
     strb r4, [r0, #(TRACK_EFFECTIVE_VOL_BYTE + TRACK_SIZEOF*3)]
 
     ldr r2, =noise_15bit_lfsr_step_table
-    ldr r3, =noise_15bit_lfsr_sample_data_ram
+    ldr r3, =noise_15bit_lfsr_sample_data
     ldr r8, =(NOISE_15BIT_LFSR_SAMPLE_SIZE-1)
     ldrb r1, [r0, #(TRACK_SQUARE_DUTYCTRL_BYTE + TRACK_SIZEOF*3)]
     tst r1, #0x80 @ LFSR width
     beq 1f @ no_regular_output
     ldr r2, =noise_7bit_lfsr_step_table
-    ldr r3, =noise_7bit_lfsr_sample_data_ram
+    ldr r3, =noise_7bit_lfsr_sample_data
     ldr r8, =(NOISE_7BIT_LFSR_SAMPLE_SIZE-1)
     1: @ no_regular_output
 
@@ -540,9 +557,11 @@ mix_sound_channel4_rom_end:
 
 init_sound:
     push {lr}
+.ifdef COPY_SAMPLE_DATA_TO_RAM
     bl copy_square_sample_data_from_rom_to_ram
     bl copy_noise_7bit_lfsr_sample_data_from_rom_to_ram
     bl copy_noise_15bit_lfsr_sample_data_from_rom_to_ram
+.endif
     bl copy_mix_sound_channel1_and_2_from_rom_to_ram
     bl copy_mix_sound_channel4_from_rom_to_ram
 
@@ -578,6 +597,7 @@ init_sound:
     pop {lr}
     bx lr
 
+.ifdef COPY_SAMPLE_DATA_TO_RAM
 copy_square_sample_data_from_rom_to_ram:
     ldr r0, =square_sample_data_rom
     ldr r1, =square_sample_data_ram
@@ -598,6 +618,7 @@ copy_noise_15bit_lfsr_sample_data_from_rom_to_ram:
     mov r2, #((noise_15bit_lfsr_sample_data_rom_end - noise_15bit_lfsr_sample_data_rom) / 4)
     orr r2, r2, #(DMA_ENABLE | DMA_START_NOW | DMA_32BIT | DMA_SRC_INC | DMA_DST_INC)
     b dma3
+.endif
 
 copy_mix_sound_channel1_and_2_from_rom_to_ram:
     ldr r0, =mix_sound_channel1_and_2_rom
