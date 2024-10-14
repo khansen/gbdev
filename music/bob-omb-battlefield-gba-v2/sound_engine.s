@@ -124,8 +124,8 @@ volume_table:
 .else
     .ifdef MIXER_FREQ_10512
         .include "square_step_table_256_10512.inc"
-        .include "noise_15bit_lfsr_step_table_2048_.inc"
-        .include "noise_7bit_lfsr_step_table_64_.inc"
+        .include "noise_15bit_lfsr_step_table_2048_10512.inc"
+        .include "noise_7bit_lfsr_step_table_64_10512.inc"
     .else
         .ifdef MIXER_FREQ_13379
             .include "square_step_table_256_13379.inc"
