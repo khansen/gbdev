@@ -1350,7 +1350,7 @@ RenderChannel1:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr11 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr11 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1514,7 +1514,7 @@ RenderChannel2:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr21 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr21 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1738,6 +1738,7 @@ dw .pan_right     ; 6
     ld a, [de] ; instrument
     inc de
     call IncPatternPtr
+    call SetInstrument
     scf ; CF=1 signals keep processing pattern data
     ret
 
