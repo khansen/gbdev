@@ -1,4 +1,6 @@
 def hz_to_gb_period(hz)
+# Super Game Boy:
+#  2048 - (134144 / hz).floor()
   2048 - (131072 / hz).floor()
 end
 
