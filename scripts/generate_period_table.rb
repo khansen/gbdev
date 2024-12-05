@@ -1,5 +1,5 @@
 def hz_to_gb_period(hz)
-  2048 - (131072 / hz).round()
+  2048 - (131072 / hz).floor()
 end
 
 octaves_in_hz = [
