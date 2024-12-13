@@ -1,0 +1,6 @@
+.equ DMA_ENABLE,   (1 << 31)
+.equ DMA_START_NOW,(0 << 28)
+.equ DMA_32BIT,    (1 << 26)
+.equ DMA_SRC_INC,  (0 << 23)
+.equ DMA_SRC_FIXED,(2 << 23)
+.equ DMA_DST_INC,  (0 << 21)
