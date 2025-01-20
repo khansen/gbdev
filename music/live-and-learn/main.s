@@ -2155,11 +2155,21 @@ Genesis:
     ldh [rVBK], a ; select bank 0
     ld hl, HelloGameBoyTileMapData
     call WriteVramStrings
+    ldh a, [rSVBK]
+    cp a, $ff ; are we on DMG or CGB?
+    jr z, .loadDMGTileMap
+    ; load CGB attributes
     ld a, 1
     ldh [rVBK], a ; select bank 1
     ld hl, HelloGameBoyTileMapAttributeData
     call WriteVramStrings
+    jr .doneLoadingTileMap
 
+    .loadDMGTileMap:
+    ld hl, HelloGameBoyDMGTileMapData
+    call WriteVramStrings
+
+    .doneLoadingTileMap:
     ld hl, DefaultWavRam
     call CopyFromHLIntoWav3Ram
 
@@ -2486,11 +2496,15 @@ db $98, $83, 14, "Live and Learn"
 db $98, $C1, 17, "Original music by"
 db $98, $E6, 8,  "Crush 40"
 db $99, $23, 10, "Remixed in"
-db $99, $2E, 2, $38,$39
+db $99, $2E, 2, $38,$39 ; flag
 db $99, $62, 15, "as requested by"
 db $99, $A3, 14, "@RaymanFan1995"
 db $99, $E4, 12, "Use D-pad to"
 db $9A, $02, 15, "toggle channels"
+db 0
+
+HelloGameBoyDMGTileMapData:
+db $99, $2E, 3, "NOR"
 db 0
 
 HelloGameBoyTileMapAttributeData:
