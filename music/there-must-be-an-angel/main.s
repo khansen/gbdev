@@ -2503,11 +2503,21 @@ Genesis:
     ldh [rVBK], a ; select bank 0
     ld hl, HelloGameBoyTileMapData
     call WriteVramStrings
+    ldh a, [rSVBK]
+    cp a, $ff ; are we on DMG or CGB?
+    jr z, .loadDMGTileMap
+    ; load CGB attributes
     ld a, 1
     ldh [rVBK], a ; select bank 1
     ld hl, HelloGameBoyTileMapAttributeData
     call WriteVramStrings
+    jr .doneLoadingTileMap
 
+    .loadDMGTileMap:
+    ld hl, HelloGameBoyDMGTileMapData
+    call WriteVramStrings
+
+    .doneLoadingTileMap:
     call InitializeBigHeart
     call InitializeObjects
     call SpawnAngel
@@ -3111,7 +3121,7 @@ db $98, $A4, 12, "Pit's Heart)"
 db $99, $01, 17, "Original music by"
 db $99, $25, 10, "Eurythmics"
 db $99, $83, 10, "Remixed in"
-db $99, $8E, 2, $38,$39
+db $99, $8E, 2, $38,$39 ; flag
 db $99, $E4, 12, "Use D-pad to"
 db $9A, $02, 15, "toggle channels"
 ; cloud 0
@@ -3137,6 +3147,10 @@ db $9A, $86, 14, $3A, $3F, $3D, $3E, $3F, $3F, $3F, $3F, $3E, $3C, $3B, $3C, $3A
 db $9A, $A6, 14, $40, $41, $41, $41, $3D, $3E, $3E, $3E, $42, $40, $41, $41, $3D, $3E
 db $9A, $CA, 4,  $40, $41, $41, $42
 db $9A, $D2, 2,  $40, $41
+db 0
+
+HelloGameBoyDMGTileMapData:
+db $99, $8E, 3, "NOR"
 db 0
 
 HelloGameBoyTileMapAttributeData:
