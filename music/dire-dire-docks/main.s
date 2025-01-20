@@ -2475,11 +2475,21 @@ Genesis:
     ldh [rVBK], a ; select bank 0
     ld hl, HelloGameBoyTileMapData
     call WriteVramStrings
+    ldh a, [rSVBK]
+    cp a, $ff ; are we on DMG or CGB?
+    jr z, .loadDMGTileMap
+    ; load CGB attributes
     ld a, 1
     ldh [rVBK], a ; select bank 1
     ld hl, HelloGameBoyTileMapAttributeData
     call WriteVramStrings
+    jr .doneLoadingTileMap
 
+    .loadDMGTileMap:
+    ld hl, HelloGameBoyDMGTileMapData
+    call WriteVramStrings
+
+    .doneLoadingTileMap:
     call InitializeObjects
 
     ld hl, DefaultWavRam
@@ -3039,7 +3049,7 @@ db $98, $62, 16, "Dire, Dire Docks"
 db $98, $A4, 11, "Original by"
 db $98, $C5, 10, "Koji Kondo"
 db $99, $43, 10, "Remixed in"
-db $99, $4E, 2, $6A,$6B
+db $99, $4E, 2, $6A,$6B ; flag
 db $99, $C4, 12, "Use D-pad to"
 db $99, $E2, 15, "toggle channels"
 db $98, $60, 2, $65,$66
@@ -3064,6 +3074,10 @@ db $99, $D2, 2, $65,$66
 db $99, $F2, 2, $67,$68
 db $9A, $00, 20, $61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62
 db $9A, $20, 20, $63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64
+db 0
+
+HelloGameBoyDMGTileMapData:
+db $99, $4E, 3, "NOR"
 db 0
 
 HelloGameBoyTileMapAttributeData:
