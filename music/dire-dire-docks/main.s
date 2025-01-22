@@ -2,83 +2,60 @@ INCLUDE "hardware.inc"
 
 NEWCHARMAP new
 CHARMAP " ", $00
-CHARMAP "!", $01
-CHARMAP "\"", $02
-CHARMAP "#", $03
-CHARMAP "$", $04
-CHARMAP "%", $05
-CHARMAP "&", $06
-CHARMAP "'", $07
-CHARMAP "(", $08
-CHARMAP ")", $09
-CHARMAP "*", $0A
-CHARMAP "+", $0B
-CHARMAP ",", $0C
-CHARMAP "-", $0D
-CHARMAP ".", $0E
-CHARMAP "/", $0F
-CHARMAP "0", $10
-CHARMAP "1", $11
-CHARMAP "2", $12
-CHARMAP "3", $13
-CHARMAP "4", $14
-CHARMAP "5", $15
-CHARMAP "6", $16
-CHARMAP "7", $17
-CHARMAP "8", $18
-CHARMAP "9", $19
-CHARMAP "A", $21
-CHARMAP "B", $22
-CHARMAP "C", $23
-CHARMAP "D", $24
-CHARMAP "E", $25
-CHARMAP "F", $26
-CHARMAP "G", $27
-CHARMAP "H", $28
-CHARMAP "I", $29
-CHARMAP "J", $2A
-CHARMAP "K", $2B
-CHARMAP "L", $2C
-CHARMAP "M", $2D
-CHARMAP "N", $2E
-CHARMAP "O", $2F
-CHARMAP "P", $30
-CHARMAP "Q", $31
-CHARMAP "R", $32
-CHARMAP "S", $33
-CHARMAP "T", $34
-CHARMAP "U", $35
-CHARMAP "V", $36
-CHARMAP "W", $37
-CHARMAP "X", $38
-CHARMAP "Y", $39
-CHARMAP "Z", $3A
-CHARMAP "a", $41
-CHARMAP "b", $42
-CHARMAP "c", $43
-CHARMAP "d", $44
-CHARMAP "e", $45
-CHARMAP "f", $46
-CHARMAP "g", $47
-CHARMAP "h", $48
-CHARMAP "i", $49
-CHARMAP "j", $4A
-CHARMAP "k", $4B
-CHARMAP "l", $4C
-CHARMAP "m", $4D
-CHARMAP "n", $4E
-CHARMAP "o", $4F
-CHARMAP "p", $50
-CHARMAP "q", $51
-CHARMAP "r", $52
-CHARMAP "s", $53
-CHARMAP "t", $54
-CHARMAP "u", $55
-CHARMAP "v", $56
-CHARMAP "w", $57
-CHARMAP "x", $58
-CHARMAP "y", $59
-CHARMAP "z", $5A
+CHARMAP "A", $01
+CHARMAP "B", $02
+CHARMAP "C", $03
+CHARMAP "D", $04
+CHARMAP "E", $05
+CHARMAP "F", $06
+CHARMAP "G", $07
+CHARMAP "H", $08
+CHARMAP "I", $09
+CHARMAP "J", $0A
+CHARMAP "K", $0B
+CHARMAP "L", $0C
+CHARMAP "M", $0D
+CHARMAP "N", $0E
+CHARMAP "O", $0F
+CHARMAP "P", $10
+CHARMAP "Q", $11
+CHARMAP "R", $12
+CHARMAP "S", $13
+CHARMAP "T", $14
+CHARMAP "U", $15
+CHARMAP "V", $16
+CHARMAP "W", $17
+CHARMAP "X", $18
+CHARMAP "Y", $19
+CHARMAP "Z", $1A
+CHARMAP "a", $1B
+CHARMAP "b", $1C
+CHARMAP "c", $1D
+CHARMAP "d", $1E
+CHARMAP "e", $1F
+CHARMAP "f", $20
+CHARMAP "g", $21
+CHARMAP "h", $22
+CHARMAP "i", $23
+CHARMAP "j", $24
+CHARMAP "k", $25
+CHARMAP "l", $26
+CHARMAP "m", $27
+CHARMAP "n", $28
+CHARMAP "o", $29
+CHARMAP "p", $2A
+CHARMAP "q", $2B
+CHARMAP "r", $2C
+CHARMAP "s", $2D
+CHARMAP "t", $2E
+CHARMAP "u", $2F
+CHARMAP "v", $30
+CHARMAP "w", $31
+CHARMAP "x", $32
+CHARMAP "y", $33
+CHARMAP "z", $34
+CHARMAP "-", $35
+CHARMAP ",", $36
 
 SECTION "HRAM", HRAM[$ff80]
 
@@ -566,6 +543,7 @@ FlushVramBuffer:
     ret z
     xor a
     ldh [hVramBufferOffset], a
+    ldh [rVBK], a ; select bank 0
     ld hl, wVramBuffer
     jp WriteVramStrings
 
@@ -2525,10 +2503,7 @@ MainFunc0:
     call HideAllSprites
     call MaybeSpawnCreature
     call UpdateObjects
-    call DrawChannel1Indicator
-    call DrawChannel2Indicator
-    call DrawChannel3Indicator
-    call DrawChannel4Indicator
+    call DrawChannelIndicators
     ; check if channels should be (un)muted
     ldh  a, [hButtonsPressed]
     ld b, a
@@ -2647,13 +2622,13 @@ DrawFishRightFrame0:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $20
+    ld a, $00
     ld [hli], a ; tile
     ldh a, [hCurrentObjectState]
     bit 2, a ; fish type
-    ld a, 1 ; red fish palette
+    ld a, 0 ; red fish palette
     jr z, .skip
-    ld a, 3 ; gray fish palette
+    ld a, 2 ; gray fish palette
 .skip:
     push af
     ld [hli], a  ; attributes
@@ -2663,7 +2638,7 @@ DrawFishRightFrame0:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $22
+    ld a, $02
     ld [hli], a ; tile
     pop af
     ld [hli], a  ; attributes
@@ -2688,13 +2663,13 @@ DrawFishRightFrame1:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $24
+    ld a, $04
     ld [hli], a ; tile
     ldh a, [hCurrentObjectState]
     bit 2, a ; fish type
-    ld a, 1 ; red fish palette
+    ld a, 0 ; red fish palette
     jr z, .skip
-    ld a, 3 ; gray fish palette
+    ld a, 2 ; gray fish palette
 .skip:
     push af
     ld [hli], a  ; attributes
@@ -2704,7 +2679,7 @@ DrawFishRightFrame1:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $22
+    ld a, $02
     ld [hli], a ; tile
     pop af
     ld [hli], a  ; attributes
@@ -2728,13 +2703,13 @@ DrawFishLeftFrame0:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $22
+    ld a, $02
     ld [hli], a ; tile
     ldh a, [hCurrentObjectState]
     bit 2, a ; fish type
-    ld a, 1 ; red fish palette
+    ld a, 0 ; red fish palette
     jr z, .skip
-    ld a, 3 ; gray fish palette
+    ld a, 2 ; gray fish palette
 .skip:
     or a, OAMF_XFLIP
     push af
@@ -2745,7 +2720,7 @@ DrawFishLeftFrame0:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $20
+    ld a, $00
     ld [hli], a ; tile
     pop af
     ld [hli], a  ; attributes
@@ -2769,13 +2744,13 @@ DrawFishLeftFrame1:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $22
+    ld a, $02
     ld [hli], a ; tile
     ldh a, [hCurrentObjectState]
     bit 2, a ; fish type
-    ld a, 1 ; red fish palette
+    ld a, 0 ; red fish palette
     jr z, .skip
-    ld a, 3 ; gray fish palette
+    ld a, 2 ; gray fish palette
 .skip:
     or a, OAMF_XFLIP
     push af
@@ -2786,7 +2761,7 @@ DrawFishLeftFrame1:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $24
+    ld a, $04
     ld [hli], a ; tile
     pop af
     ld [hli], a  ; attributes
@@ -2810,9 +2785,9 @@ DrawBlooperFrame0:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $26
+    ld a, $06
     ld [hli], a ; tile
-    ld a, 2
+    ld a, 1
     ld [hli], a  ; attributes
     ; right half
     ld a, c ; Object_PosY_Int
@@ -2820,9 +2795,9 @@ DrawBlooperFrame0:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $26
+    ld a, $06
     ld [hli], a ; tile
-    ld a, 2 | OAMF_XFLIP
+    ld a, 1 | OAMF_XFLIP
     ld [hli], a  ; attributes
     call EndDrawSprites
     pop hl ; Object_PosX_Frac
@@ -2844,9 +2819,9 @@ DrawBlooperFrame1:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $28
+    ld a, $08
     ld [hli], a ; tile
-    ld a, 2
+    ld a, 1
     ld [hli], a  ; attributes
     ; right half, top
     ld a, c ; Object_PosY_Int
@@ -2854,9 +2829,9 @@ DrawBlooperFrame1:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $28
+    ld a, $08
     ld [hli], a ; tile
-    ld a, 2 | OAMF_XFLIP
+    ld a, 1 | OAMF_XFLIP
     ld [hli], a  ; attributes
     ; left half, bottom
     ld a, c ; Object_PosY_Int
@@ -2864,9 +2839,9 @@ DrawBlooperFrame1:
     ld [hli], a ; y
     ld a, b ; Object_PosX_Int
     ld [hli], a ; x
-    ld a, $2A
+    ld a, $0A
     ld [hli], a ; tile
-    ld a, 2
+    ld a, 1
     ld [hli], a  ; attributes
     ; right half, top
     ld a, c ; Object_PosY_Int
@@ -2875,121 +2850,249 @@ DrawBlooperFrame1:
     ld a, b ; Object_PosX_Int
     add a, 8
     ld [hli], a ; x
-    ld a, $2A
+    ld a, $0A
     ld [hli], a ; tile
-    ld a, 2 | OAMF_XFLIP
+    ld a, 1 | OAMF_XFLIP
     ld [hli], a  ; attributes
     call EndDrawSprites
     pop hl ; Object_PosX_Frac
     ret
 
-DrawChannel1Indicator:
+DrawChannelIndicators:
+    ; upper half
+    ld de, $9984
+    ld c, 11 ; 2+1+2+1+2+1+2 tiles
+    call BeginVramString
+
+    ; channel 1
     ldh a, [hSoundStatus]
     bit 0, a
-    jr z, .not_muted
-    ret
-    .not_muted:
+    jr z, .channel1_not_muted_top
+    ld a, 0
+    jr .draw_channel1_top
+    .channel1_not_muted_top:
     ldh a, [hShadowNR12]
-    or a, a
-    jr nz, .draw_it
-    ret
-    .draw_it:
     and a, $0e
+    .draw_channel1_top:
+    or a, a
+    jr z, .draw_channel1_blank_top
     sla a ; ball size (0..7) * 4
-    ld d, a
-    ld e, 36 + 8
-    jp DrawBall
+    add a, $44
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel1_channel2_separator_top
+    .draw_channel1_blank_top:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel1_channel2_separator_top:
+    ; space
+    ld a, 0
+    ld [hli], a
 
-DrawChannel2Indicator:
+    ; channel 2
     ldh a, [hSoundStatus]
     bit 1, a
-    jr z, .not_muted
-    ret
-    .not_muted:
+    jr z, .channel2_not_muted_top
+    ld a, 0
+    jr .draw_channel2_top
+    .channel2_not_muted_top:
     ldh a, [hShadowNR22]
-    or a, a
-    jr nz, .draw_it
-    ret
-    .draw_it:
     and a, $0e
+    .draw_channel2_top:
+    or a, a
+    jr z, .draw_channel2_blank_top
     sla a ; ball size (0..7) * 4
-    ld d, a
-    ld e, 36 + 24 + 8
-    jp DrawBall
+    add a, $44
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel2_channel3_separator_top
+    .draw_channel2_blank_top:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel2_channel3_separator_top:
+    ; space
+    ld a, 0
+    ld [hli], a
 
-DrawChannel3Indicator:
+    ; channel 3
     ldh a, [hSoundStatus]
     bit 2, a
-    jr z, .not_muted
-    ret
-    .not_muted:
+    jr z, .channel3_not_muted_top
+    ld a, 0
+    jr .draw_channel3_top
+    .channel3_not_muted_top:
     ldh a, [hShadowNR32]
-    or a, a
-    jr nz, .draw_it
-    ret
-    .draw_it:
     and a, $0e
+    .draw_channel3_top:
+    or a, a
+    jr z, .draw_channel3_blank_top
     sla a ; ball size (0..7) * 4
-    ld d, a
-    ld e, 36 + 24 + 24 + 8
-    jp DrawBall
+    add a, $44
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel3_channel4_separator_top
+    .draw_channel3_blank_top:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel3_channel4_separator_top:
+    ; space
+    ld a, 0
+    ld [hli], a
 
-DrawChannel4Indicator:
+    ; channel 4
     ldh a, [hSoundStatus]
     bit 3, a
-    jr z, .not_muted
-    ret
-    .not_muted:
+    jr z, .channel4_not_muted_top
+    ld a, 0
+    jr .draw_channel4_top
+    .channel4_not_muted_top:
     ldh a, [hShadowNR42]
-    or a, a
-    jr nz, .draw_it
-    ret
-    .draw_it:
     and a, $0e
+    .draw_channel4_top:
+    or a, a
+    jr z, .draw_channel4_blank_top
     sla a ; ball size (0..7) * 4
-    ld d, a
-    ld e, 36 + 24 + 24 + 24 + 8
-    jp DrawBall
+    add a, $44
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .top_half_done
+    .draw_channel4_blank_top:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .top_half_done:
+    call EndVramString
 
-DrawBall:
-    ; D = ball size * 4
-    ; E = X pos
-    ; left half
-    call BeginDrawSprites
-    ld a, 96 + 16
-    ld [hli], a ; y
-    ld a, e
-    ld [hli], a ; x
-    ld a, d
-    add a, $00 ; tile offset
-    ld [hli], a ; tile
-    xor a
-    ld [hli], a  ; attributes
-    ; right half
-    ld a, 96 + 16
-    ld [hli], a ; y
-    ld a, e
-    add a, 8
-    ld [hli], a ; x
-    ld a, d
-    add a, $02 ; tile offset
-    ld [hli], a ; tile
-    xor a
-    ld [hli], a  ; attributes
-    jp EndDrawSprites
+    ; lower half
+    ld de, $99A4
+    ld c, 11 ; 2+1+2+1+2+1+2 tiles
+    call BeginVramString
+
+    ; channel 1
+    ldh a, [hSoundStatus]
+    bit 0, a
+    jr z, .channel1_not_muted_bottom
+    ld a, 0
+    jr .draw_channel1_bottom
+    .channel1_not_muted_bottom:
+    ldh a, [hShadowNR12]
+    and a, $0e
+    .draw_channel1_bottom:
+    or a, a
+    jr z, .draw_channel1_blank_bottom
+    sla a ; ball size (0..7) * 4
+    add a, $45
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel1_channel2_separator_bottom
+    .draw_channel1_blank_bottom:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel1_channel2_separator_bottom:
+    ; space
+    ld a, 0
+    ld [hli], a
+
+    ; channel 2
+    ldh a, [hSoundStatus]
+    bit 1, a
+    jr z, .channel2_not_muted_bottom
+    ld a, 0
+    jr .draw_channel2_bottom
+    .channel2_not_muted_bottom:
+    ldh a, [hShadowNR22]
+    and a, $0e
+    .draw_channel2_bottom:
+    or a, a
+    jr z, .draw_channel2_blank_bottom
+    sla a ; ball size (0..7) * 4
+    add a, $45
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel2_channel3_separator_bottom
+    .draw_channel2_blank_bottom:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel2_channel3_separator_bottom:
+    ; space
+    ld a, 0
+    ld [hli], a
+
+    ; channel 3
+    ldh a, [hSoundStatus]
+    bit 2, a
+    jr z, .channel3_not_muted_bottom
+    ld a, 0
+    jr .draw_channel3_bottom
+    .channel3_not_muted_bottom:
+    ldh a, [hShadowNR32]
+    and a, $0e
+    .draw_channel3_bottom:
+    or a, a
+    jr z, .draw_channel3_blank_bottom
+    sla a ; ball size (0..7) * 4
+    add a, $45
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .draw_channel3_channel4_separator_bottom
+    .draw_channel3_blank_bottom:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .draw_channel3_channel4_separator_bottom:
+    ; space
+    ld a, 0
+    ld [hli], a
+
+    ; channel 4
+    ldh a, [hSoundStatus]
+    bit 3, a
+    jr z, .channel4_not_muted_bottom
+    ld a, 0
+    jr .draw_channel4_bottom
+    .channel4_not_muted_bottom:
+    ldh a, [hShadowNR42]
+    and a, $0e
+    .draw_channel4_bottom:
+    or a, a
+    jr z, .draw_channel4_blank_bottom
+    sla a ; ball size (0..7) * 4
+    add a, $45
+    ld [hli], a
+    add a, 2
+    ld [hli], a
+    jr .bottom_half_done
+    .draw_channel4_blank_bottom:
+    ; space
+    ld [hli], a
+    ld [hli], a
+    .bottom_half_done:
+    jp EndVramString
 
 SECTION "Tile data", ROM0
 
 BGTiles:
-incbin "font.bin" ; 96 tiles
-incbin "scenery.bin" ; 10 tiles
-incbin "flag.bin" ; 2 tiles
+incbin "font.bin"    ; $00 - 56 tiles
+incbin "scenery.bin" ; $38 - 10 tiles
+incbin "flag.bin"    ; $42 - 2 tiles
+incbin "ball.bin"    ; $44 - 32 tiles
 BGTilesEnd:
 
 OBJTiles:
-incbin "ball.bin" ; 32 tiles
-incbin "fish.bin" ; 6 tiles
-incbin "blooper.bin" ; 6 tiles
+incbin "fish.bin"    ; $00 - 6 tiles
+incbin "blooper.bin" ; $06 - 6 tiles
 OBJTilesEnd:
 
 SECTION "Palette data", rom0
@@ -3015,25 +3118,25 @@ dw %0110000000000000
 dw %0000000000011111
 dw %0110110000000000
 dw %0111111111111111
-BGPalettesEnd:
-
-OBJPalettes:
-; 0 - orb
-dw %0000000000000000
+; 4 - orb
+dw %0110000000000000
 dw %0100001111111111
 dw %0010000111101111
 dw %0000100000000000
-; 1 - red fish
+BGPalettesEnd:
+
+OBJPalettes:
+; 0 - red fish
 dw %0000000000000000
 dw %0000000000011111
 dw %0111111111111111
 dw %0000001111111111
-; 2 - blooper
+; 1 - blooper
 dw %0000000000000000
 dw %0000000000000000
 dw %0111111111111111
 dw %0110000111101111
-; 3 - gray fish
+; 2 - gray fish
 dw %0000000000000000
 dw %0100011000110001
 dw %0111111111111111
@@ -3043,37 +3146,37 @@ OBJPalettesEnd:
 SECTION "VRAM strings", ROM0
 
 HelloGameBoyTileMapData:
-db $98, $00, 20, $69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69,$69
-db $98, $20, 20, $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+db $98, $00, 20, $41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41,$41
+db $98, $20, 20, $38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38,$38
 db $98, $62, 16, "Dire, Dire Docks"
 db $98, $A4, 11, "Original by"
 db $98, $C5, 10, "Koji Kondo"
 db $99, $43, 10, "Remixed in"
-db $99, $4E, 2, $6A,$6B ; flag
+db $99, $4E, 2, $42,$43 ; flag
 db $99, $C4, 12, "Use D-pad to"
 db $99, $E2, 15, "toggle channels"
-db $98, $60, 2, $65,$66
-db $98, $80, 2, $67,$68
-db $98, $A0, 2, $65,$66
-db $98, $C0, 2, $67,$68
-db $98, $72, 2, $65,$66
-db $98, $92, 2, $67,$68
-db $98, $B2, 2, $65,$66
-db $98, $D2, 2, $67,$68
-db $98, $E0, 4, $61,$62,$61,$62
-db $99, $00, 4, $63,$64,$63,$64
-db $98, $F0, 4, $61,$62,$61,$62
-db $99, $10, 4, $63,$64,$63,$64
-db $99, $80, 2, $65,$66
-db $99, $A0, 2, $67,$68
-db $99, $C0, 2, $65,$66
-db $99, $E0, 2, $67,$68
-db $99, $92, 2, $65,$66
-db $99, $B2, 2, $67,$68
-db $99, $D2, 2, $65,$66
-db $99, $F2, 2, $67,$68
-db $9A, $00, 20, $61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62,$61,$62
-db $9A, $20, 20, $63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64,$63,$64
+db $98, $60, 2, $3D,$3E
+db $98, $80, 2, $3F,$40
+db $98, $A0, 2, $3D,$3E
+db $98, $C0, 2, $3F,$40
+db $98, $72, 2, $3D,$3E
+db $98, $92, 2, $3F,$40
+db $98, $B2, 2, $3D,$3E
+db $98, $D2, 2, $3F,$40
+db $98, $E0, 4, $39,$3A,$39,$3A
+db $99, $00, 4, $3B,$3C,$3B,$3C
+db $98, $F0, 4, $39,$3A,$39,$3A
+db $99, $10, 4, $3B,$3C,$3B,$3C
+db $99, $80, 2, $3D,$3E
+db $99, $A0, 2, $3F,$40
+db $99, $C0, 2, $3D,$3E
+db $99, $E0, 2, $3F,$40
+db $99, $92, 2, $3D,$3E
+db $99, $B2, 2, $3F,$40
+db $99, $D2, 2, $3D,$3E
+db $99, $F2, 2, $3F,$40
+db $9A, $00, 20, $39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A,$39,$3A
+db $9A, $20, 20, $3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C,$3B,$3C
 db 0
 
 HelloGameBoyDMGTileMapData:
@@ -3095,7 +3198,9 @@ db $98, $F0, 4, $01,$01,$01,$01
 db $99, $10, 4, $01,$01,$01,$01
 db $99, $4E, 2, $03,$03
 db $99, $80, 2, $02,$02
+db $99, $84, 11, $04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04
 db $99, $A0, 2, $02,$02
+db $99, $A4, 11, $04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04
 db $99, $C0, 2, $02,$02
 db $99, $E0, 2, $02,$02
 db $99, $92, 2, $02,$02
