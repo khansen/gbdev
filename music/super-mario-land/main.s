@@ -76,7 +76,7 @@ hScrollX: db
 
 hScrollY: db
 
-; --- Sound engine
+; --- Begin Sound engine
 
 hInstrumentTable: dw
 
@@ -95,6 +95,8 @@ hShadowNR42: db
 ; bit 5: paused (1=yes)
 hSoundStatus: db
 
+; --- End Sound engine
+
 SECTION "WRAM", WRAM0[$c000]
 
 wOam:
@@ -104,44 +106,46 @@ wOam:
 wVramBuffer:
     ds 128
 
+; --- Begin Sound engine
+
 rsreset
 def Track_Speed rb 1                                ; 00
 def Track_Tick rb 1                                 ; 01
 def Track_Pattern_RowCount rb 1                     ; 02
 def Track_Pattern_Row rb 1                          ; 03
 def Track_Pattern_RowStatus rb 1                    ; 04
-def Track_Pattern_Pos rb 1                          ; 05
-def Track_Pattern_Ptr rw 1                          ; 06
-; def Track_Pattern_LoopCount rb 1
-def Track_Order_Pos rb 1                            ; 08
-def Track_Effect_Kind rb 1                          ; 09
-def Track_Effect_Param rb 1                         ; 0A
-def Track_Effect_Pos rb 1                           ; 0B
+def Track_Pattern_Ptr rw 1                          ; 05
+def Track_Order_Pos rb 1                            ; 07
+def Track_Effect_Kind rb 1                          ; 08
+def Track_Effect_Param rb 1                         ; 09
+def Track_Effect_Pos rb 1                           ; 0A
 rsset Track_Effect_Pos
-def Track_Effect_Portamento_Ctrl rb 1 ; bit 7: done if zero. bit 0: direction ; 0B
-def Track_Effect_Portamento_TargetPeriodLo rb 1     ; 0C
-def Track_Effect_Portamento_TargetPeriodHi rb 1     ; 0D
-def Track_MasterVol rb 1                            ; 0E
-def Track_PeriodIndex rb 1                          ; 0F
-def Track_PeriodLo rb 1                             ; 10
-def Track_PeriodHi rb 1                             ; 11
-def Track_Square_DutyCtrl rb 1                      ; 12
-def Track_Envelope_Phase rb 1                       ; 13
-def Track_Envelope_Ptr rw 1                         ; 14
-def Track_Envelope_Pos rb 1                         ; 16
-def Track_Envelope_Vol rb 1                         ; 17
-def Track_Envelope_Step rb 1                        ; 18
-def Track_Envelope_Dest rb 1                        ; 19
-def Track_Envelope_Hold rb 1                        ; 1A
-def Track_SIZEOF rb 0                               ; 1B
+def Track_Effect_Portamento_Ctrl rb 1 ; bit 7: done if zero. bit 0: direction ; 0A
+def Track_Effect_Portamento_TargetPeriodLo rb 1     ; 0B
+def Track_Effect_Portamento_TargetPeriodHi rb 1     ; 0C
+def Track_MasterVol rb 1                            ; 0D
+def Track_PeriodIndex rb 1                          ; 0E
+def Track_PeriodLo rb 1                             ; 0F
+def Track_PeriodHi rb 1                             ; 10
+def Track_Square_DutyCtrl rb 1                      ; 11
+def Track_Envelope_Phase rb 1                       ; 12
+def Track_Envelope_Ptr rw 1                         ; 13
+def Track_Envelope_Pos rb 1                         ; 15
+def Track_Envelope_Vol rb 1                         ; 16
+def Track_Envelope_Step rb 1                        ; 17
+def Track_Envelope_Dest rb 1                        ; 18
+def Track_Envelope_Hold rb 1                        ; 19
+def Track_SIZEOF rb 0                               ; 1A
 
-assert Track_Effect_Pos == $b
-assert Track_SIZEOF == $1b
+assert Track_Effect_Pos == $a
+assert Track_SIZEOF == $1a
 
 def NUM_TRACKS equ 4
 
 wTracks:
   ds Track_SIZEOF * NUM_TRACKS
+
+; --- End Sound engine
 
 SECTION "ROM Bank $000", ROM0[$0]
 
@@ -593,7 +597,6 @@ StartSong:
     dec de ; Track_Order_Pos
     dec de ; Track_Pattern_Ptr (hi)
     dec de ; Track_Pattern_Ptr (lo)
-    dec de ; Track_Pattern_Pos
     dec de ; Track_Pattern_RowStatus
     dec de ; Track_Pattern_Row
     xor a, a
@@ -664,7 +667,8 @@ def VOLUME_SLIDE_EFFECT equ 6
 def CUT_EFFECT equ 7
 
 UpdateSound:
-    ld b, NUM_TRACKS
+;    call UpdateSampleData
+    ld b, 0 ; track index
     ld hl, wTracks; + Track_SIZEOF
     .loop:
     ld a, [hli] ; Track_Speed
@@ -692,16 +696,11 @@ UpdateSound:
     .end_of_pattern:
     push hl ; Track_Pattern_Row
     xor a, a
-    ld [hli], a ; Track_Pattern_Row
-    inc l ; skip Track_Pattern_RowStatus
-    inc a
-    ld [hli], a ; Track_Pattern_Pos = 1 (first byte is row count)
-    ; TODO: check if pattern should be looped
-    ; decrement Track_Pattern_LoopCount
-    ; if zero, start order fetch loop
-    ; if not, skip pattern row count byte and go to no_new_pattern
+    ld [hli], a ; Track_Pattern_Row = 0
+    inc l ; Track_Pattern_Ptr (lo)
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
+    .pre_order_loop:
     ld a, [hl] ; Track_Order_Pos
     ld c, a
     ldh a, [hOrder]
@@ -716,15 +715,18 @@ UpdateSound:
     inc [hl] ; Track_Order_Pos
     cp a, $f0 ; $f0 > a?
     jr nc, .order_special
-    ; pattern number in lower 7 bits
+    ; pattern number
     add a, a ; pattern number * 2
     ld c, a
-    ldh a, [hPatternTable]
-    add a, c
-    ld e, a
     ldh a, [hPatternTable+1]
     adc a, 0
     ld d, a
+    ldh a, [hPatternTable]
+    add a, c
+    ld e, a
+    jr nc, .skip_inc_d
+    inc d
+    .skip_inc_d:
     ld a, [de]
     dec l ; Track_Pattern_Ptr (hi)
     dec l ; Track_Pattern_Ptr (lo)
@@ -732,35 +734,32 @@ UpdateSound:
     inc de
     ld c, a
     ld a, [de]
-    ld [hl], a ; Track_Pattern_Ptr (hi)
+    ld [hl-], a ; Track_Pattern_Ptr (hi)
     ld e, c
     ld d, a
     ld a, [de] ; row count
     inc de
+    call IncPatternPtr
     pop hl ; Track_Pattern_Row
     dec l ; Track_Pattern_RowCount
     ld [hli], a ; Track_Pattern_RowCount
     inc l ; Track_Pattern_RowStatus
     jr .fetch_row_status
     .order_special:
-    ; TODO: implement order commands
-    jp Begin
-    jr .order_fetch_loop
+    ; TODO: implement order commands. Assume $fe for now
+    ld a, [de] ; order byte
+    ld [hl], a ; Track_Order_Pos
+    jr .pre_order_loop
     .no_new_pattern:
     ld a, [hli] ; Track_Pattern_Row
     and a, 7
     jr nz, .check_row_status
     ; prepare to fetch row status
-    inc l ; Track_Pattern_Pos
-    ld a, [hli] ; Track_Pattern_Pos
-    ld c, a
+    inc l ; Track_Pattern_Ptr (lo)
     ld a, [hli] ; Track_Pattern_Ptr (lo)
-    add a, c
     ld e, a
     ld a, [hl-] ; Track_Pattern_Ptr (hi)
-    adc a, 0
     ld d, a
-    dec l ; Track_Pattern_Pos
     dec l ; Track_Pattern_RowStatus
     .fetch_row_status:
     ; HL = Track_Pattern_RowStatus
@@ -769,7 +768,7 @@ UpdateSound:
     ld a, [de] ; pattern byte
     inc de
     ld [hli], a ; Track_Pattern_RowStatus
-    inc [hl] ; Track_Pattern_Pos
+    call IncPatternPtr
     dec l ; Track_Pattern_RowStatus
     .check_row_status:
     ; HL = Track_Pattern_RowStatus
@@ -780,36 +779,36 @@ UpdateSound:
     ; HL = Track_Pattern_RowStatus
     dec l ; Track_Pattern_Row
     ld a, [hli] ; Track_Pattern_Row
-    inc hl ; Track_Pattern_Pos
+    inc l ; Track_Pattern_Ptr (lo)
     and a, 7
     jr z, .pattern_fetch_loop
     ; for rows not multiple of 8, DE does not yet contain pattern data ptr because we didn't fetch row status byte
-    ld a, [hli] ; Track_Pattern_Pos
-    ld c, a
     ld a, [hli] ; Track_Pattern_Ptr (lo)
-    add a, c
     ld e, a
     ld a, [hl-] ; Track_Pattern_Ptr (hi)
-    adc a, 0
     ld d, a
-    dec l ; Track_Pattern_Pos
     .pattern_fetch_loop:
-    ; HL = Track_Pattern_Pos
+    ; HL = Track_Pattern_Ptr (lo)
     ; DE = pattern data ptr
     ld a, [de] ; pattern byte
     inc de
-    inc [hl] ; Track_Pattern_Pos
-    cp a, $e0 ; $e0 > a? (is it an effect or a command?)
+    call IncPatternPtr
+    cp a, $b0 ; $b0 > a? (is it an effect or a command?)
     jr c, .is_note
+    cp a, $c0 ; a < $c0? (is it a set instrument command?)
+    jr c, .is_set_instrument_command
+    cp a, $d0 ; a < $d0? (is it a set speed command?)
+    jr c, .is_set_speed_command
+    cp a, $e0 ; a < $e0? (is it a set volume command?)
+    jr c, .is_set_volume_command
     cp a, $f0 ; $f0 > a? (is it a command ( >= $f0)?)
-    jr nc, .is_command
+    jr nc, .is_other_command
     ; set effect and param
     and a, $f
-    push hl ; Track_Pattern_Pos
+    push hl ; Track_Pattern_Ptr (lo)
     jr z, .skip_inc ; effect = 0 --> no parameter byte
-    inc [hl] ; Track_Pattern_Pos
+    call IncPatternPtr
     .skip_inc:
-    inc l ; Track_Pattern_Ptr (lo)
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     inc l ; Track_Effect_Kind
@@ -823,18 +822,38 @@ UpdateSound:
     xor a, a
     ld [hl], a ; Track_Effect_Pos
     .skip_effect_init:
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     jr .pattern_fetch_loop
-    .is_command:
+    .is_set_instrument_command:
+    and a, $f ; instrument in lower 4 bits
+    call SetInstrument
+    jr .pattern_fetch_loop
+    .is_set_speed_command:
+    and a, $f ; new speed - 1 in lower 4 bits
+    inc a
+    call SetSpeed
+    jr .pattern_fetch_loop
+    .is_set_volume_command:
+    and a, $f
+    swap a ; new volume in upper 4 bits
+    or a, 1 ; indicates that volume was explicitly set
+    push hl ; Track_Pattern_Ptr (lo)
+    push de
+    ld de, Track_MasterVol - Track_Pattern_Ptr
+    add hl, de
+    ld [hl], a ; Track_MasterVol
+    pop de ; pattern data ptr
+    pop hl ; Track_Pattern_Ptr (lo)
+    jr .pattern_fetch_loop
+    .is_other_command:
     and a, $f
     call GoPatternCommand
     jr c, .pattern_fetch_loop
     dec l ; Track_Pattern_RowStatus
     jr .mixer_tick
     .is_note:
-    push hl ; Track_Pattern_Pos
+    push hl ; Track_Pattern_Ptr (lo)
     ld c, a ; save note
-    inc l ; Track_Pattern_Ptr (lo)
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     inc l ; Track_Effect_Kind
@@ -892,7 +911,7 @@ UpdateSound:
     and a, $fc
     or a, c ; copy initial counter to current counter
     ld [hl], a ; Track_Square_DutyCtrl
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     dec l ; Track_Pattern_RowStatus
     jp .mixer_tick
     .init_slide:
@@ -922,7 +941,7 @@ UpdateSound:
     ld [hl-], a ; Track_Effect_Portamento_TargetPeriodLo
     ld a, c
     ld [hl], a ; Track_Effect_Portamento_Ctrl
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     dec l ; Track_Pattern_RowStatus
     .mixer_tick:
     ; hl points to Track_Pattern_RowStatus
@@ -938,14 +957,24 @@ UpdateSound:
     ld de, Track_SIZEOF - Track_Envelope_Phase
     add hl, de ; next track
     .next_track:
-    dec b
+    inc b
+    ld a, b
+    cp a, NUM_TRACKS
     jp nz, .loop
 
     ; write to audio hw regs
     call RenderChannel1
     call RenderChannel2
     call RenderChannel3
-    call RenderChannel4
+    jp RenderChannel4
+
+; HL = Track_Pattern_Ptr (lo)
+IncPatternPtr:
+    inc [hl] ; Track_Pattern_Ptr (lo)
+    ret nz
+    inc l ; Track_Pattern_Ptr (hi)
+    inc [hl] ; Track_Pattern_Ptr (hi)
+    dec l ; Track_Pattern_Ptr (lo)
     ret
 
 RenderChannel1:
@@ -954,7 +983,7 @@ RenderChannel1:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr11 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr11 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1028,7 +1057,7 @@ RenderChannel1:
     ldh [rNR13], a
     ld a, $7f
     ldh [rNR14], a
-    ret
+    jr .update_square_duty
     .not_muted:
     ; NR13
     ld hl, wTracks + Track_PeriodLo
@@ -1044,7 +1073,7 @@ RenderChannel1:
     .no_trigger:
     ldh [rNR14], a
 
-    ; Update square duty
+    .update_square_duty:
     ld hl, wTracks + Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
@@ -1118,7 +1147,7 @@ RenderChannel2:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr21 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr21 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1192,7 +1221,7 @@ RenderChannel2:
     ldh [rNR23], a
     ld a, $7f
     ldh [rNR24], a
-    ret
+    jr .update_square_duty
     .not_muted:
     ; NR23
     ld hl, wTracks + Track_PeriodLo + Track_SIZEOF
@@ -1208,7 +1237,7 @@ RenderChannel2:
     .no_trigger:
     ldh [rNR24], a
 
-    ; Update square duty
+    .update_square_duty:
     ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
@@ -1330,18 +1359,145 @@ GoPatternCommand:
     rst JumpTable
 dw .set_instr     ; 0
 dw .release       ; 1
-dw .set_mastervol ; 2
-dw .set_speed     ; 3
-dw .end_row       ; 4
+dw .set_speed     ; 2
+dw .end_row       ; 3
+dw .pan_left      ; 4
+dw .pan_center    ; 5
+dw .pan_right     ; 6
 
     .set_instr:
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ld a, [de] ; instrument
     inc de
-    push de
-    inc [hl] ; Track_Pattern_Pos
+    call IncPatternPtr
+    call SetInstrument
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
+    .release:
+    pop hl ; Track_Pattern_Ptr (lo)
     push hl
+    ld de, Track_Envelope_Hold - Track_Pattern_Ptr
+    add hl, de
+    ld a, 1
+    ld [hl], a ; Track_Envelope_Hold
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
+    .set_speed:
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    ld a, [de] ; new speed
+    inc de
+    call IncPatternPtr
+    call SetSpeed
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
+    .end_row: ; this command is used when there is no note for the row, only commands
+    pop hl ; Track_Pattern_Ptr (lo)
+    push hl
+    ld de, Track_MasterVol - Track_Pattern_Ptr
+    add hl, de
+    ld a, [hl] ; Track_MasterVol
+    and $fe
+    ld [hl], a ; Track_MasterVol
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    scf
+    ccf ; CF=0 signals end of pattern data processing
+    ret
+
+    .pan_left:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_left
+    dec a
+    jr z, .pan_track_1_left
+    dec a
+    jr z, .pan_track_2_left
+    ; pan track 3 left
+    res 3, [hl]
+    set 7, [hl]
+    jr .done_panning
+    .pan_track_0_left:
+    res 0, [hl]
+    set 4, [hl]
+    jr .done_panning
+    .pan_track_1_left:
+    res 1, [hl]
+    set 5, [hl]
+    jr .done_panning
+    .pan_track_2_left:
+    res 2, [hl]
+    set 6, [hl]
+    .done_panning:
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
+    .pan_center:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_center
+    dec a
+    jr z, .pan_track_1_center
+    dec a
+    jr z, .pan_track_2_center
+    ; pan track 3 center
+    set 3, [hl]
+    set 7, [hl]
+    jr .done_panning
+    .pan_track_0_center:
+    set 0, [hl]
+    set 4, [hl]
+    jr .done_panning
+    .pan_track_1_center:
+    set 1, [hl]
+    set 5, [hl]
+    jr .done_panning
+    .pan_track_2_center:
+    set 2, [hl]
+    set 6, [hl]
+    jr .done_panning
+
+    .pan_right:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_right
+    dec a
+    jr z, .pan_track_1_right
+    dec a
+    jr z, .pan_track_2_right
+    ; pan track 3 right
+    res 7, [hl]
+    set 3, [hl]
+    jr .done_panning
+    .pan_track_0_right:
+    res 4, [hl]
+    set 0, [hl]
+    jr .done_panning
+    .pan_track_1_right:
+    res 5, [hl]
+    set 1, [hl]
+    jr .done_panning
+    .pan_track_2_right:
+    res 6, [hl]
+    set 2, [hl]
+    jr .done_panning
+
+; A = instrument
+; preserves DE and HL
+SetInstrument:
+    push de
+    push hl ; Track_Pattern_Ptr (lo)
     sla a
     sla a
     sla a ; each instrument is 8 bytes long
@@ -1353,7 +1509,7 @@ dw .end_row       ; 4
     adc a, 0
     ld d, a
     ld a, l
-    add a, Track_Envelope_Ptr - Track_Pattern_Pos
+    add a, Track_Envelope_Ptr - Track_Pattern_Ptr
     ld l, a
     ld a, [de] ; 0 - envelope lo
     inc de
@@ -1376,46 +1532,13 @@ dw .end_row       ; 4
     ld l, a
     ld a, [de] ; 5 - duty
     ld [hl], a ; Track_Square_DutyCtrl
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
-    scf ; CF=1 signals keep processing pattern data
     ret
 
-    .release:
-    pop hl ; Track_Pattern_Pos
-    push hl
-    ld de, Track_Envelope_Hold - Track_Pattern_Pos
-    add hl, de
-    ld a, 1
-    ld [hl], a ; Track_Envelope_Hold
-    pop hl ; Track_Pattern_Pos
-    pop de ; pattern data ptr
-    scf ; CF=1 signals keep processing pattern data
-    ret
-
-    .set_mastervol:
-    pop hl ; Track_Pattern_Pos
-    pop de ; pattern data ptr
-    ld a, [de] ; new volume (in upper 4 bits)
-    inc de
-    inc [hl] ; Track_Pattern_Pos
-    or a, 1 ; indicates that volume was explicitly set
-    push hl
-    push de
-    ld de, Track_MasterVol - Track_Pattern_Pos
-    add hl, de
-    ld [hl], a ; Track_MasterVol
-    pop de ; pattern data ptr
-    pop hl ; Track_Pattern_Pos
-    scf ; CF=1 signals keep processing pattern data
-    ret
-
-    .set_speed:
-    pop hl ; Track_Pattern_Pos
-    pop de ; pattern data ptr
-    ld a, [de] ; new speed
-    inc de
-    inc [hl] ; Track_Pattern_Pos
+; A = new speed
+; preserves DE and HL
+SetSpeed:
     push de
     push hl
     ld hl, wTracks + Track_Speed
@@ -1427,23 +1550,8 @@ dw .end_row       ; 4
     ld [hl], a ; Track_Speed
     add hl, de
     ld [hl], a ; Track_Speed
-    pop hl ; Track_Pattern_Pos
+    pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
-    scf ; CF=1 signals keep processing pattern data
-    ret
-
-    .end_row: ; this command is used when there is no note for the row, only commands
-    pop hl ; Track_Pattern_Pos
-    push hl
-    ld de, Track_MasterVol - Track_Pattern_Pos
-    add hl, de
-    ld a, [hl] ; Track_MasterVol
-    and $fe
-    ld [hl], a ; Track_MasterVol
-    pop hl ; Track_Pattern_Pos
-    pop de ; pattern data ptr
-    scf
-    ccf ; CF=0 signals end of pattern data processing
     ret
 
 ; A = effect kind, HL = Track_Effect_Param
@@ -1556,7 +1664,7 @@ dw .pulsemod_tick     ; 9
     ld [hl], a ; Track_PeriodHi
     ; halt
     pop hl ; Track_Effect_Param
-    inc hl ; Track_Effect_Portamento_Ctrl
+    inc l ; Track_Effect_Portamento_Ctrl
     xor a, a
     ld [hl-], a ; Track_Effect_Portamento_Ctrl
     ret
@@ -1690,7 +1798,37 @@ dw .pulsemod_tick     ; 9
 
     .volume_slide_tick:
     pop hl ; Track_Effect_Param
-    ; TODO: implement volume slide
+    ld a, [hl] ; Track_Effect_Param
+    cp a, $10
+    jr c, .sub_volume
+    ; add to volume
+    swap a
+    and a, $f
+    sla a
+    sla a ; delta * 4
+    ld c, a
+    push hl ; Track_Effect_Param
+    ld de, Track_MasterVol - Track_Effect_Param
+    add hl, de
+    ld a, [hl] ; Track_MasterVol
+    add a, c
+    jr nc, .set_volume
+    ld a, $fc ; max volume
+    jr .set_volume
+    .sub_volume:
+    sla a
+    sla a ; delta * 4
+    ld c, a
+    push hl ; Track_Effect_Param
+    ld de, Track_MasterVol - Track_Effect_Param
+    add hl, de
+    ld a, [hl] ; Track_MasterVol
+    sub a, c
+    jr nc, .set_volume
+    xor a, a
+    .set_volume:
+    ld [hl], a ; Track_MasterVol
+    pop hl ; Track_Effect_Param
     ret
 
     .tremolo_tick:
@@ -1702,18 +1840,18 @@ dw .pulsemod_tick     ; 9
     pop hl ; Track_Effect_Param
     ld a, [hli] ; Track_Effect_Param
     ld c, a
-    ld a, [hl-] ; Track_Effect_Pos
+    ld a, [hl] ; Track_Effect_Pos
     cp a, c
-    jr nc, .cut
-    ret
-    .cut:
+    inc a
+    ld [hl-], a ; Track_Effect_Pos
+    ret c
+    ; cut! (set volume to 0)
     push hl ; Track_Effect_Param
     ld a, l ; Track_Effect_Param
-    add a, Track_PeriodLo - Track_Effect_Param
-    ld l, a ; Track_PeriodLo
+    add a, Track_MasterVol - Track_Effect_Param
+    ld l, a ; Track_MasterVol
     xor a, a
-    ld [hli], a ; Track_PeriodLo
-    ld [hl], a ; Track_PeriodHi
+    ld [hl], a ; Track_MasterVol
     pop hl ; Track_Effect_Param
     ret
 
@@ -1786,12 +1924,13 @@ EnvelopeTick:
     ld a, [hli] ; Track_Envelope_Ptr (hi)
     ld d, a
     ld a, c
-    ld [hl], a ; Track_Envelope_Pos
+    ld [hli], a ; Track_Envelope_Pos
+    inc l ; Track_Envelope_Step
     add a, e
     ld e, a
-    jr nc, .init_vol
+    jr nc, .point_init
     inc d
-    jr .init_vol
+    jr .point_init
     .env_stop:
     pop hl ; Track_Envelope_Phase
     xor a, a

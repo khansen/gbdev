@@ -15,6 +15,3 @@ source:0x01 target:13 transpose:-18
 source:0x02 target:14 transpose:-18
 source:0x03 target:15 transpose:-18
 source:0x23 target:16 transpose:-18
-# DMC
-source:0x39 target:0
-source:0x3A target:1
