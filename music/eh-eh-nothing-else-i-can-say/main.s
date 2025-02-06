@@ -76,7 +76,7 @@ hScrollX: db
 
 hScrollY: db
 
-; --- Sound engine
+; --- Begin Sound engine
 
 hInstrumentTable: dw
 
@@ -95,6 +95,8 @@ hShadowNR42: db
 ; bit 5: paused (1=yes)
 hSoundStatus: db
 
+; --- End Sound engine
+
 SECTION "WRAM", WRAM0[$c000]
 
 wOam:
@@ -103,6 +105,8 @@ wOam:
 
 wVramBuffer:
     ds 128
+
+; --- Begin Sound engine
 
 rsreset
 def Track_Speed rb 1                                ; 00
@@ -140,6 +144,8 @@ def NUM_TRACKS equ 4
 
 wTracks:
   ds Track_SIZEOF * NUM_TRACKS
+
+; --- End Sound engine
 
 SECTION "ROM Bank $000", ROM0[$0]
 
@@ -661,7 +667,8 @@ def VOLUME_SLIDE_EFFECT equ 6
 def CUT_EFFECT equ 7
 
 UpdateSound:
-    ld b, NUM_TRACKS
+;    call UpdateSampleData
+    ld b, 0 ; track index
     ld hl, wTracks; + Track_SIZEOF
     .loop:
     ld a, [hli] ; Track_Speed
@@ -693,6 +700,7 @@ UpdateSound:
     inc l ; Track_Pattern_Ptr (lo)
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
+    .pre_order_loop:
     ld a, [hl] ; Track_Order_Pos
     ld c, a
     ldh a, [hOrder]
@@ -707,15 +715,18 @@ UpdateSound:
     inc [hl] ; Track_Order_Pos
     cp a, $f0 ; $f0 > a?
     jr nc, .order_special
-    ; pattern number in lower 7 bits
+    ; pattern number
     add a, a ; pattern number * 2
     ld c, a
-    ldh a, [hPatternTable]
-    add a, c
-    ld e, a
     ldh a, [hPatternTable+1]
     adc a, 0
     ld d, a
+    ldh a, [hPatternTable]
+    add a, c
+    ld e, a
+    jr nc, .skip_inc_d
+    inc d
+    .skip_inc_d:
     ld a, [de]
     dec l ; Track_Pattern_Ptr (hi)
     dec l ; Track_Pattern_Ptr (lo)
@@ -735,9 +746,10 @@ UpdateSound:
     inc l ; Track_Pattern_RowStatus
     jr .fetch_row_status
     .order_special:
-    ; TODO: implement order commands
-    jp Begin
-    jr .order_fetch_loop
+    ; TODO: implement order commands. Assume $fe for now
+    ld a, [de] ; order byte
+    ld [hl], a ; Track_Order_Pos
+    jr .pre_order_loop
     .no_new_pattern:
     ld a, [hli] ; Track_Pattern_Row
     and a, 7
@@ -781,8 +793,10 @@ UpdateSound:
     ld a, [de] ; pattern byte
     inc de
     call IncPatternPtr
-    cp a, $c0 ; $c0 > a? (is it an effect or a command?)
+    cp a, $b0 ; $b0 > a? (is it an effect or a command?)
     jr c, .is_note
+    cp a, $c0 ; a < $c0? (is it a set instrument command?)
+    jr c, .is_set_instrument_command
     cp a, $d0 ; a < $d0? (is it a set speed command?)
     jr c, .is_set_speed_command
     cp a, $e0 ; a < $e0? (is it a set volume command?)
@@ -809,6 +823,10 @@ UpdateSound:
     ld [hl], a ; Track_Effect_Pos
     .skip_effect_init:
     pop hl ; Track_Pattern_Ptr (lo)
+    jr .pattern_fetch_loop
+    .is_set_instrument_command:
+    and a, $f ; instrument in lower 4 bits
+    call SetInstrument
     jr .pattern_fetch_loop
     .is_set_speed_command:
     and a, $f ; new speed - 1 in lower 4 bits
@@ -939,7 +957,9 @@ UpdateSound:
     ld de, Track_SIZEOF - Track_Envelope_Phase
     add hl, de ; next track
     .next_track:
-    dec b
+    inc b
+    ld a, b
+    cp a, NUM_TRACKS
     jp nz, .loop
 
     ; write to audio hw regs
@@ -963,7 +983,7 @@ RenderChannel1:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr11 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr11 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1037,7 +1057,7 @@ RenderChannel1:
     ldh [rNR13], a
     ld a, $7f
     ldh [rNR14], a
-    ret
+    jr .update_square_duty
     .not_muted:
     ; NR13
     ld hl, wTracks + Track_PeriodLo
@@ -1053,7 +1073,7 @@ RenderChannel1:
     .no_trigger:
     ldh [rNR14], a
 
-    ; Update square duty
+    .update_square_duty:
     ld hl, wTracks + Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
@@ -1127,7 +1147,7 @@ RenderChannel2:
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
-    jr nz, .write_nr21 ; if counter is zero, use duty from bits 6-7
+    jr nz, .write_nr21 ; if counter is non-zero, use duty from bits 6-7
     ; use duty from bits 4-5
     sla a
     sla a
@@ -1201,7 +1221,7 @@ RenderChannel2:
     ldh [rNR23], a
     ld a, $7f
     ldh [rNR24], a
-    ret
+    jr .update_square_duty
     .not_muted:
     ; NR23
     ld hl, wTracks + Track_PeriodLo + Track_SIZEOF
@@ -1217,7 +1237,7 @@ RenderChannel2:
     .no_trigger:
     ldh [rNR24], a
 
-    ; Update square duty
+    .update_square_duty:
     ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
@@ -1341,51 +1361,17 @@ dw .set_instr     ; 0
 dw .release       ; 1
 dw .set_speed     ; 2
 dw .end_row       ; 3
+dw .pan_left      ; 4
+dw .pan_center    ; 5
+dw .pan_right     ; 6
 
     .set_instr:
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ld a, [de] ; instrument
     inc de
-    push de
     call IncPatternPtr
-    push hl ; Track_Pattern_Ptr (lo)
-    sla a
-    sla a
-    sla a ; each instrument is 8 bytes long
-    ld c, a
-    ldh a, [hInstrumentTable]
-    add a, c
-    ld e, a
-    ldh a, [hInstrumentTable+1]
-    adc a, 0
-    ld d, a
-    ld a, l
-    add a, Track_Envelope_Ptr - Track_Pattern_Ptr
-    ld l, a
-    ld a, [de] ; 0 - envelope lo
-    inc de
-    ld [hli], a ; Track_Envelope_Ptr (lo)
-    ld a, [de] ; 1 - envelope hi
-    inc de
-    ld [hl], a ; Track_Envelope_Ptr (hi)
-    ld a, l
-    sub a, Track_Envelope_Ptr+1 - Track_Effect_Kind
-    ld l, a
-    inc de ; 2 - unused
-    ld a, [de] ; 3 - effect kind
-    inc de
-    ld [hli], a ; Track_Effect_Kind
-    ld a, [de] ; 4 - effect param
-    inc de
-    ld [hl], a ; Track_Effect_Param
-    ld a, l
-    add a, Track_Square_DutyCtrl - Track_Effect_Param
-    ld l, a
-    ld a, [de] ; 5 - duty
-    ld [hl], a ; Track_Square_DutyCtrl
-    pop hl ; Track_Pattern_Ptr (lo)
-    pop de ; pattern data ptr
+    call SetInstrument
     scf ; CF=1 signals keep processing pattern data
     ret
 
@@ -1423,6 +1409,131 @@ dw .end_row       ; 3
     pop de ; pattern data ptr
     scf
     ccf ; CF=0 signals end of pattern data processing
+    ret
+
+    .pan_left:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_left
+    dec a
+    jr z, .pan_track_1_left
+    dec a
+    jr z, .pan_track_2_left
+    ; pan track 3 left
+    res 3, [hl]
+    set 7, [hl]
+    jr .done_panning
+    .pan_track_0_left:
+    res 0, [hl]
+    set 4, [hl]
+    jr .done_panning
+    .pan_track_1_left:
+    res 1, [hl]
+    set 5, [hl]
+    jr .done_panning
+    .pan_track_2_left:
+    res 2, [hl]
+    set 6, [hl]
+    .done_panning:
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
+    .pan_center:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_center
+    dec a
+    jr z, .pan_track_1_center
+    dec a
+    jr z, .pan_track_2_center
+    ; pan track 3 center
+    set 3, [hl]
+    set 7, [hl]
+    jr .done_panning
+    .pan_track_0_center:
+    set 0, [hl]
+    set 4, [hl]
+    jr .done_panning
+    .pan_track_1_center:
+    set 1, [hl]
+    set 5, [hl]
+    jr .done_panning
+    .pan_track_2_center:
+    set 2, [hl]
+    set 6, [hl]
+    jr .done_panning
+
+    .pan_right:
+    ld hl, rAUDTERM
+    ld a, b
+    or a
+    jr z, .pan_track_0_right
+    dec a
+    jr z, .pan_track_1_right
+    dec a
+    jr z, .pan_track_2_right
+    ; pan track 3 right
+    res 7, [hl]
+    set 3, [hl]
+    jr .done_panning
+    .pan_track_0_right:
+    res 4, [hl]
+    set 0, [hl]
+    jr .done_panning
+    .pan_track_1_right:
+    res 5, [hl]
+    set 1, [hl]
+    jr .done_panning
+    .pan_track_2_right:
+    res 6, [hl]
+    set 2, [hl]
+    jr .done_panning
+
+; A = instrument
+; preserves DE and HL
+SetInstrument:
+    push de
+    push hl ; Track_Pattern_Ptr (lo)
+    sla a
+    sla a
+    sla a ; each instrument is 8 bytes long
+    ld c, a
+    ldh a, [hInstrumentTable]
+    add a, c
+    ld e, a
+    ldh a, [hInstrumentTable+1]
+    adc a, 0
+    ld d, a
+    ld a, l
+    add a, Track_Envelope_Ptr - Track_Pattern_Ptr
+    ld l, a
+    ld a, [de] ; 0 - envelope lo
+    inc de
+    ld [hli], a ; Track_Envelope_Ptr (lo)
+    ld a, [de] ; 1 - envelope hi
+    inc de
+    ld [hl], a ; Track_Envelope_Ptr (hi)
+    ld a, l
+    sub a, Track_Envelope_Ptr+1 - Track_Effect_Kind
+    ld l, a
+    inc de ; 2 - unused
+    ld a, [de] ; 3 - effect kind
+    inc de
+    ld [hli], a ; Track_Effect_Kind
+    ld a, [de] ; 4 - effect param
+    inc de
+    ld [hl], a ; Track_Effect_Param
+    ld a, l
+    add a, Track_Square_DutyCtrl - Track_Effect_Param
+    ld l, a
+    ld a, [de] ; 5 - duty
+    ld [hl], a ; Track_Square_DutyCtrl
+    pop hl ; Track_Pattern_Ptr (lo)
+    pop de ; pattern data ptr
     ret
 
 ; A = new speed
@@ -1687,7 +1798,37 @@ dw .pulsemod_tick     ; 9
 
     .volume_slide_tick:
     pop hl ; Track_Effect_Param
-    ; TODO: implement volume slide
+    ld a, [hl] ; Track_Effect_Param
+    cp a, $10
+    jr c, .sub_volume
+    ; add to volume
+    swap a
+    and a, $f
+    sla a
+    sla a ; delta * 4
+    ld c, a
+    push hl ; Track_Effect_Param
+    ld de, Track_MasterVol - Track_Effect_Param
+    add hl, de
+    ld a, [hl] ; Track_MasterVol
+    add a, c
+    jr nc, .set_volume
+    ld a, $fc ; max volume
+    jr .set_volume
+    .sub_volume:
+    sla a
+    sla a ; delta * 4
+    ld c, a
+    push hl ; Track_Effect_Param
+    ld de, Track_MasterVol - Track_Effect_Param
+    add hl, de
+    ld a, [hl] ; Track_MasterVol
+    sub a, c
+    jr nc, .set_volume
+    xor a, a
+    .set_volume:
+    ld [hl], a ; Track_MasterVol
+    pop hl ; Track_Effect_Param
     ret
 
     .tremolo_tick:
@@ -1700,9 +1841,9 @@ dw .pulsemod_tick     ; 9
     ld a, [hli] ; Track_Effect_Param
     ld c, a
     ld a, [hl] ; Track_Effect_Pos
+    cp a, c
     inc a
     ld [hl-], a ; Track_Effect_Pos
-    cp a, c
     ret c
     ; cut! (set volume to 0)
     push hl ; Track_Effect_Param
@@ -1783,12 +1924,13 @@ EnvelopeTick:
     ld a, [hli] ; Track_Envelope_Ptr (hi)
     ld d, a
     ld a, c
-    ld [hl], a ; Track_Envelope_Pos
+    ld [hli], a ; Track_Envelope_Pos
+    inc l ; Track_Envelope_Step
     add a, e
     ld e, a
-    jr nc, .init_vol
+    jr nc, .point_init
     inc d
-    jr .init_vol
+    jr .point_init
     .env_stop:
     pop hl ; Track_Envelope_Phase
     xor a, a
