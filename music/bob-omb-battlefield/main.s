@@ -2356,10 +2356,21 @@ Genesis:
     ldh [rVBK], a ; select bank 0
     ld hl, HelloGameBoyTileMapData
     call WriteVramStrings
+    ldh a, [rSVBK]
+    cp a, $ff ; are we on DMG or CGB?
+    jr z, .loadDMGTileMap
+    ; load CGB attributes
     ld a, 1
     ldh [rVBK], a ; select bank 1
     ld hl, HelloGameBoyTileMapAttributeData
     call WriteVramStrings
+    jr .doneLoadingTileMap
+
+    .loadDMGTileMap:
+    ld hl, HelloGameBoyDMGTileMapData
+    call WriteVramStrings
+
+    .doneLoadingTileMap:
 
     call InitializeObjects
 
@@ -2905,6 +2916,10 @@ db $99, $83, 10, "Remixed in"
 db $99, $8E, 2, $38,$39
 db $99, $E4, 12, "Use D-pad to"
 db $9A, $02, 15, "toggle channels"
+db 0
+
+HelloGameBoyDMGTileMapData:
+db $99, $8E, 3, "NOR"
 db 0
 
 HelloGameBoyTileMapAttributeData:
