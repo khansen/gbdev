@@ -2475,6 +2475,410 @@ SetMemory:
     jr nz, SetMemory
     ret
 
+PrintWantedPosterSum:
+    ld a, [hCurrentLevel]
+    sla a
+    ld e, a
+    ld d, 0
+    ld hl, .WantedPosterSumStrings
+    add hl, de
+    ld a, [hli]
+    ld e, a
+    ld d, [hl]
+    ld a, [de]
+    push de
+    ld c, a
+    ld de, $99cd
+    call BeginVramString
+    pop de
+    push de
+    inc de
+    ld b, 0
+    call CopyData
+    call EndVramString
+    pop de
+    ld a, [de]
+    push de
+    ld c, a
+    ld de, $99ed
+    call BeginVramString
+    pop de
+.CopyData:
+    inc de
+    ld a, [de]
+    add a, 11
+    ld [hli], a
+    dec c
+    jr nz, .CopyData
+    jp EndVramString
+
+NEWCHARMAP bucks
+CHARMAP " ", $00
+CHARMAP "1", $a9
+CHARMAP "2", $aa
+CHARMAP "3", $ab
+CHARMAP "4", $ac
+CHARMAP "5", $ad
+CHARMAP "6", $ae
+CHARMAP "7", $af
+CHARMAP "8", $b0
+CHARMAP "9", $b1
+CHARMAP "0", $b2
+setcharmap bucks
+
+.WantedPosterSumStrings:
+dw .WantedPosterSumString0  
+dw .WantedPosterSumString1  
+dw .WantedPosterSumString2  
+dw .WantedPosterSumString3  
+dw .WantedPosterSumString4  
+dw .WantedPosterSumString5  
+dw .WantedPosterSumString6  
+dw .WantedPosterSumString7  
+dw .WantedPosterSumString8  
+dw .WantedPosterSumString9  
+dw .WantedPosterSumString10  
+dw .WantedPosterSumString11  
+dw .WantedPosterSumString12  
+dw .WantedPosterSumString13  
+dw .WantedPosterSumString14  
+dw .WantedPosterSumString15  
+dw .WantedPosterSumString16  
+dw .WantedPosterSumString17  
+dw .WantedPosterSumString18  
+dw .WantedPosterSumString19  
+dw .WantedPosterSumString20  
+dw .WantedPosterSumString21  
+dw .WantedPosterSumString22  
+dw .WantedPosterSumString23  
+dw .WantedPosterSumString24  
+dw .WantedPosterSumString25  
+dw .WantedPosterSumString26  
+dw .WantedPosterSumString27  
+dw .WantedPosterSumString28  
+dw .WantedPosterSumString29  
+dw .WantedPosterSumString30  
+dw .WantedPosterSumString31  
+dw .WantedPosterSumString32  
+dw .WantedPosterSumString33  
+dw .WantedPosterSumString34  
+dw .WantedPosterSumString35  
+dw .WantedPosterSumString36  
+dw .WantedPosterSumString37  
+dw .WantedPosterSumString38  
+dw .WantedPosterSumString39  
+dw .WantedPosterSumString40  
+dw .WantedPosterSumString41  
+dw .WantedPosterSumString42  
+dw .WantedPosterSumString43  
+dw .WantedPosterSumString44  
+dw .WantedPosterSumString45  
+dw .WantedPosterSumString46  
+dw .WantedPosterSumString47  
+dw .WantedPosterSumString48  
+dw .WantedPosterSumString49  
+.WantedPosterSumString0:
+db 1, "1"
+.WantedPosterSumString1:
+db 1, "2"
+.WantedPosterSumString2:
+db 1, "5"
+.WantedPosterSumString3:
+db 2, "10"
+.WantedPosterSumString4:
+db 2, "25"
+.WantedPosterSumString5:
+db 2, "50"
+.WantedPosterSumString6:
+db 2, "75"
+.WantedPosterSumString7:
+db 3, "100"
+.WantedPosterSumString8:
+db 3, "150"
+.WantedPosterSumString9:
+db 3, "200"
+.WantedPosterSumString10:
+db 3, "300"
+.WantedPosterSumString11:
+db 3, "400"
+.WantedPosterSumString12:
+db 3, "500"
+.WantedPosterSumString13:
+db 3, "600"
+.WantedPosterSumString14:
+db 3, "750"
+.WantedPosterSumString15:
+db 3, "900"
+.WantedPosterSumString16:
+db 4, "1000"
+.WantedPosterSumString17:
+db 4, "1200"
+.WantedPosterSumString18:
+db 4, "1400"
+.WantedPosterSumString19:
+db 4, "1600"
+.WantedPosterSumString20:
+db 4, "1800"
+.WantedPosterSumString21:
+db 4, "2000"
+.WantedPosterSumString22:
+db 4, "2250"
+.WantedPosterSumString23:
+db 4, "2500"
+.WantedPosterSumString24:
+db 4, "2750"
+.WantedPosterSumString25:
+db 4, "3000"
+.WantedPosterSumString26:
+db 4, "3250"
+.WantedPosterSumString27:
+db 4, "3500"
+.WantedPosterSumString28:
+db 4, "3750"
+.WantedPosterSumString29:
+db 4, "4000"
+.WantedPosterSumString30:
+db 4, "4250"
+.WantedPosterSumString31:
+db 4, "4500"
+.WantedPosterSumString32:
+db 4, "4750"
+.WantedPosterSumString33:
+db 4, "5000"
+.WantedPosterSumString34:
+db 4, "5250"
+.WantedPosterSumString35:
+db 4, "5500"
+.WantedPosterSumString36:
+db 4, "5750"
+.WantedPosterSumString37:
+db 4, "6000"
+.WantedPosterSumString38:
+db 4, "6500"
+.WantedPosterSumString39:
+db 4, "7000"
+.WantedPosterSumString40:
+db 4, "7500"
+.WantedPosterSumString41:
+db 4, "8000"
+.WantedPosterSumString42:
+db 4, "8200"
+.WantedPosterSumString43:
+db 4, "8400"
+.WantedPosterSumString44:
+db 4, "8600"
+.WantedPosterSumString45:
+db 4, "8800"
+.WantedPosterSumString46:
+db 4, "9000"
+.WantedPosterSumString47:
+db 4, "9100"
+.WantedPosterSumString48:
+db 4, "9300"
+.WantedPosterSumString49:
+db 4, "9500"
+
+PrintWantedPosterName:
+    ld a, [hCurrentLevel]
+    sla a
+    ld e, a
+    ld d, 0
+    ld hl, .WantedPosterNameStrings
+    add hl, de
+    ld a, [hli]
+    ld e, a
+    ld d, [hl]
+    push de
+    ld de, $99a3
+    ld c, 14
+    call BeginVramString
+    pop de
+    ld b, 0
+    call CopyData
+    jp EndVramString
+
+NEWCHARMAP new
+CHARMAP " ", $00
+CHARMAP "A", $be
+CHARMAP "B", $bf
+CHARMAP "C", $c0
+CHARMAP "D", $c1
+CHARMAP "E", $c2
+CHARMAP "F", $c3
+CHARMAP "G", $c4
+CHARMAP "H", $c5
+CHARMAP "I", $c6
+CHARMAP "J", $c7
+CHARMAP "K", $c8
+CHARMAP "L", $c9
+CHARMAP "M", $ca
+CHARMAP "N", $cb
+CHARMAP "O", $cc
+CHARMAP "P", $cd
+CHARMAP "Q", $ce
+CHARMAP "R", $cf
+CHARMAP "S", $d0
+CHARMAP "T", $d1
+CHARMAP "U", $d2
+CHARMAP "V", $d3
+CHARMAP "W", $d4
+CHARMAP "X", $d5
+CHARMAP "Y", $d6
+CHARMAP "Z", $d7
+setcharmap new
+
+.WantedPosterNameStrings:
+dw .WantedPosterNameString0  
+dw .WantedPosterNameString1  
+dw .WantedPosterNameString2  
+dw .WantedPosterNameString3  
+dw .WantedPosterNameString4  
+dw .WantedPosterNameString5  
+dw .WantedPosterNameString6  
+dw .WantedPosterNameString7  
+dw .WantedPosterNameString8  
+dw .WantedPosterNameString9  
+dw .WantedPosterNameString10  
+dw .WantedPosterNameString11  
+dw .WantedPosterNameString12  
+dw .WantedPosterNameString13  
+dw .WantedPosterNameString14  
+dw .WantedPosterNameString15  
+dw .WantedPosterNameString16  
+dw .WantedPosterNameString17  
+dw .WantedPosterNameString18  
+dw .WantedPosterNameString19  
+dw .WantedPosterNameString20  
+dw .WantedPosterNameString21  
+dw .WantedPosterNameString22  
+dw .WantedPosterNameString23  
+dw .WantedPosterNameString24  
+dw .WantedPosterNameString25  
+dw .WantedPosterNameString26  
+dw .WantedPosterNameString27  
+dw .WantedPosterNameString28  
+dw .WantedPosterNameString29  
+dw .WantedPosterNameString30  
+dw .WantedPosterNameString31  
+dw .WantedPosterNameString32  
+dw .WantedPosterNameString33  
+dw .WantedPosterNameString34  
+dw .WantedPosterNameString35  
+dw .WantedPosterNameString36  
+dw .WantedPosterNameString37  
+dw .WantedPosterNameString38  
+dw .WantedPosterNameString39  
+dw .WantedPosterNameString40  
+dw .WantedPosterNameString41  
+dw .WantedPosterNameString42  
+dw .WantedPosterNameString43  
+dw .WantedPosterNameString44  
+dw .WantedPosterNameString45  
+dw .WantedPosterNameString46  
+dw .WantedPosterNameString47  
+dw .WantedPosterNameString48  
+dw .WantedPosterNameString49  
+.WantedPosterNameString0:
+db "  JED CROWE   "
+.WantedPosterNameString1:
+db "  BART SLADE  "
+.WantedPosterNameString2:
+db "  ZEKE NASH   "
+.WantedPosterNameString3:
+db "  CHET BOONE  "
+.WantedPosterNameString4:
+db "  HANK DOOLIN "
+.WantedPosterNameString5:
+db "  ROY CUTTER  "
+.WantedPosterNameString6:
+db "  WADE GRADY  "
+.WantedPosterNameString7:
+db "  LUKE HARLAN "
+.WantedPosterNameString8:
+db "  JESSE VANCE "
+.WantedPosterNameString9:
+db "  CLAY MORLAN "
+.WantedPosterNameString10:
+db "  DUKE CARSON "
+.WantedPosterNameString11:
+db " FLOYD BAXTER "
+.WantedPosterNameString12:
+db " SILAS REEVES "
+.WantedPosterNameString13:
+db " BOONE TANNER "
+.WantedPosterNameString14:
+db "  GUS RAWLINS "
+.WantedPosterNameString15:
+db "  RUFUS CLAY  "
+.WantedPosterNameString16:
+db "  LEVI HUNTER "
+.WantedPosterNameString17:
+db "  AMOS GRAVES "
+.WantedPosterNameString18:
+db "  WES MCGRAW  "
+.WantedPosterNameString19:
+db "  COLE RANSOM "
+.WantedPosterNameString20:
+db " VIRGIL STONE "
+.WantedPosterNameString21:
+db " JEB CALLOWAY "
+.WantedPosterNameString22:
+db " TUCKER BRIGGS"
+.WantedPosterNameString23:
+db " CLYDE JARVIS "
+.WantedPosterNameString24:
+db " HARLAN WOLFE "
+.WantedPosterNameString25:
+db " SAUL CANTRELL"
+.WantedPosterNameString26:
+db " FESTER DURHAM"
+.WantedPosterNameString27:
+db " BLADE MADDOX "
+.WantedPosterNameString28:
+db " JETHRO SNYDER"
+.WantedPosterNameString29:
+db "  CORBIN KANE "
+.WantedPosterNameString30:
+db "  OTIS LANGLEY"
+.WantedPosterNameString31:
+db "  QUINN DALTON"
+.WantedPosterNameString32:
+db "  MORGAN YATES"
+.WantedPosterNameString33:
+db " STERLING WADE"
+.WantedPosterNameString34:
+db "  CASH RYDER  "
+.WantedPosterNameString35:
+db "  BO RUTLEDGE "
+.WantedPosterNameString36:
+db " WYATT STRONG "
+.WantedPosterNameString37:
+db "  RANGER KNOX "
+.WantedPosterNameString38:
+db "  TEX HOLLAND "
+.WantedPosterNameString39:
+db " JOSIAH BURNS "
+.WantedPosterNameString40:
+db "  DEACON SHAW "
+.WantedPosterNameString41:
+db "  LUTHER GRANT"
+.WantedPosterNameString42:
+db "  MERLE WESTON"
+.WantedPosterNameString43:
+db " RAY BOUDREAUX"
+.WantedPosterNameString44:
+db "  SAMSON CROFT"
+.WantedPosterNameString45:
+db "  ORSON TATE  "
+.WantedPosterNameString46:
+db "CLINT MAVERICK"
+.WantedPosterNameString47:
+db "BUCK HAWTHORNE"
+.WantedPosterNameString48:
+db "  DALLAS GREER"
+.WantedPosterNameString49:
+db "  JACKSON COLE"
+
 PrintCurrentLevel:
     ld de, $990c
     ld c, 2
@@ -2777,7 +3181,8 @@ MainFunc0: ; setup level start
     ld hl, LevelStartTileMapData
     call WriteVramStrings
 
-    call PrintCurrentLevel
+    call PrintWantedPosterName
+    call PrintWantedPosterSum
 
     call HideAllSprites
 
@@ -2791,6 +3196,7 @@ MainFunc0: ; setup level start
 
 ; wait for Start
 MainFunc1:
+    call FlashPushStartButtonText
     ldh a, [hButtonsPressed]
     and a, PADF_START
     jr nz, .startDuel
@@ -2799,6 +3205,16 @@ MainFunc1:
     ld a, 2
     ldh [hMainState], a ; setup game
     jp TurnOffLCD
+
+FlashPushStartButtonText:
+    ldh a, [hFrameCounter]
+    and a, $1c
+    jr nz, .printPushStartButton
+    ld de, ErasePushStartButtonString
+    jp CopyStringToVramBuffer
+    .printPushStartButton:
+    ld de, PushStartButtonString
+    jp CopyStringToVramBuffer
 
 MainFunc2: ; setup game
     ld de, GameTiles
@@ -3549,7 +3965,10 @@ incbin "opponentdeadtiles.bin" ; $f8 - 8 tiles
 GameTilesEnd:
 
 LevelStartTiles:
-incbin "levelstartfont.bin"
+; packchr --nametable-base=0x00 --character-output=wantedtiles.bin wanted.chr
+incbin "wantedtiles.bin"    ; $00 - 168 tiles
+incbin "wantedsumtiles.bin" ; $a8 - 22 tiles
+incbin "wantednamefont.bin" ; $be - 27 tiles
 LevelStartTilesEnd:
 
 GameOverTiles:
@@ -3561,17 +3980,25 @@ GameOverTilesEnd:
 SECTION "VRAM strings", ROM0
 
 LevelStartTileMapData:
-db $99,$05,7,17,15,18,15,17,0,28
-db $99,$81,17,19,20,21,22,0,21,23,11,24,23,0,25,20,23,23,26,27
+; packnam --width=20 --vram-address=0x9800 --output=wantedtilemap.bin packchr.nam
+incbin "wantedtilemap.bin"
+; dollar sign
+db $99,$cc,$01,$a8
+db $99,$ec,$01,$b3
 db 0
+
+PushStartButtonString:
+db $9a,$21,17,"PUSH START BUTTON",0
+ErasePushStartButtonString:
+db $9a,$21,17,"                 ",0
 
 GameTileMapData:
 ; black background
-;db $98,$00,$60,$80
-;db $99,$c0,$60,$80
-;db $99,$e0,$60,$80
-;db $9a,$00,$60,$80
-;db $9a,$20,$60,$80
+db $98,$00,$60,$00
+db $99,$c0,$60,$00
+db $99,$e0,$60,$00
+db $9a,$00,$60,$00
+db $9a,$20,$60,$00
 ; packnam --width=20 --vram-address=0x9820 --output=dueltilemap.bin packchr.nam
 incbin "dueltilemap.bin"
 db 0
