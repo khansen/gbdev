@@ -3553,7 +3553,9 @@ incbin "levelstartfont.bin"
 LevelStartTilesEnd:
 
 GameOverTiles:
-incbin "gameoverfont.bin"
+; packchr --nametable-base=0x00 --character-output=gameovertiles.bin gameover.chr
+incbin "gameovertiles.bin" ; $00 - 243 tiles
+incbin "gameoverfont.bin"  ; $f3 - 12 tiles
 GameOverTilesEnd:
 
 SECTION "VRAM strings", ROM0
@@ -3570,10 +3572,13 @@ GameTileMapData:
 ;db $99,$e0,$60,$80
 ;db $9a,$00,$60,$80
 ;db $9a,$20,$60,$80
-; packnam --width=20 --vram-address=0x9820 packchr.nam
+; packnam --width=20 --vram-address=0x9820 --output=dueltilemap.bin packchr.nam
 incbin "dueltilemap.bin"
 db 0
 
 GameOverTileMapData:
-db $99,$05,9,1,2,3,4,0,5,6,4,7
+; packnam --width=20 --vram-address=0x9800 --output=gameovertilemap.bin packchr.nam
+incbin "gameovertilemap.bin"
+db $99,$e5,9,$f3,$f4,$f5,$f6,0,$f7,$f8,$f6,$f9 ; "GAME OVER"
+db $9a,$24,12,$fa,$fb,$f4,$fa,$fc,$f6,$f9,$f7,$fe,$fd,$f7,$f5 ; "DPADHERO.COM"
 db 0
