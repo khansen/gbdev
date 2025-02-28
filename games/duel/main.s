@@ -33,6 +33,8 @@ def TIMER_SPEED equ 4
 
 hTimerLo: db
 
+hTimerCallback: dw
+
 hQuickTimeEventKind: db
 
 hQuickTimeEventTimer: db
@@ -2402,6 +2404,52 @@ db 3 ; PADF_LEFT
 db 4 ; PADF_UP
 
 
+; A = high timer value
+; DE = timeout callback
+; destroys A
+SetTimer:
+    ldh [hTimerHi], a
+    ld a, TIMER_SPEED
+    ldh [hTimerLo], a
+    ld a, e
+    ldh [hTimerCallback], a
+    ld a, d
+    ldh [hTimerCallback+1], a
+    ret
+
+; A = high timer value
+; B = next main state
+; destroys A, D, E
+SetTimerWithNextStateTimeout:
+    ld de, MainFunc6_TimerTimeout
+    call SetTimer
+    ld a, b
+    ldh [hNextMainState], a
+    ld a, 6
+    ldh [hMainState], a ; delay
+    ret
+
+TickTimer:
+    ldh a, [hTimerLo]
+    dec a
+    jr nz, .noTimeoutLo
+    ldh a, [hTimerHi]
+    dec a
+    jr nz, .noTimeoutHi
+    ld a, [hTimerCallback]
+    ld l, a
+    ld a, [hTimerCallback+1]
+    ld h, a
+    jp hl
+    .noTimeoutHi:
+    ldh [hTimerHi], a
+    ld a, TIMER_SPEED
+    ldh [hTimerLo], a
+    ret
+    .noTimeoutLo:
+    ldh [hTimerLo], a
+    ret
+
 ; DE = source address
 ; BC = count
 ; HL = destination address
@@ -2771,9 +2819,8 @@ MainFunc2: ; setup game
     jr c, .noClamp
     ld a, 160
     .noClamp:
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
+    ld de, MainFunc3_TimerTimeout
+    call SetTimer
 
     ld a, 3 ; countdown to quick time event
     ldh [hMainState], a
@@ -2782,19 +2829,7 @@ MainFunc2: ; setup game
 
     jp TurnOnLCD
 
-; countdown to quick time event
-MainFunc3:
-    call HideAllSprites
-    ; TODO: maybe draw some tumbleweed?
-    ldh a, [hButtonsPressed]
-    and a, PADF_LEFT | PADF_RIGHT | PADF_UP | PADF_DOWN | PADF_B | PADF_A
-    jr nz, .drewTooFast
-    ldh a, [hTimerLo]
-    dec a
-    jr nz, .noTimeoutLo
-    ldh a, [hTimerHi]
-    dec a
-    jr nz, .noTimeoutHi
+MainFunc3_TimerTimeout:
     ; time to draw!
     call Prng
     and a, 31
@@ -2829,14 +2864,15 @@ MainFunc3:
     ld a, 4
     ldh [hMainState], a ; time to draw!
     ret
-    .noTimeoutHi:
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ret
-    .noTimeoutLo:
-    ldh [hTimerLo], a
-    ret
+
+; countdown to quick time event
+MainFunc3:
+    call HideAllSprites
+    ; TODO: maybe draw some tumbleweed?
+    ldh a, [hButtonsPressed]
+    and a, PADF_LEFT | PADF_RIGHT | PADF_UP | PADF_DOWN | PADF_B | PADF_A
+    jr nz, .drewTooFast
+    jp TickTimer
     .drewTooFast:
     ; oops, the opponent shoots you
     call CopyOpponentDrawGunStringsToVramBuffer
@@ -2976,10 +3012,6 @@ MainFunc5:
     ld hl, shoot_song
     call StartSong
     call EraseQuickTimeEventButtonIndicators
-    ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
     ld a, 0
     ldh [hPlayerWon], a
     ld a, 12
@@ -3029,42 +3061,22 @@ db $99,$84,$43,$1c
 db $99,$a4,$43,$1c
 .opponentDeadStringsEnd:
 
-; wait for timer to expire, then go to next state
-; TODO: convert it into a ProcessTimer, that calls a callback function when it times out.
-; Then we can do other kinds of processing in the main handler, like updating animations
-MainFunc6:
-    ldh a, [hTimerLo]
-    dec a
-    jr nz, .noTimeoutLo
-    ; timeout lo
-    ldh a, [hTimerHi]
-    dec a
-    jr nz, .noTimeoutHi
-    ; timeout hi
+MainFunc6_TimerTimeout:
     ldh a, [hNextMainState]
     ldh [hMainState], a
     ret
-    .noTimeoutHi:
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ret
-    .noTimeoutLo:
-    ldh [hTimerLo], a
-    ret
+
+; wait for timer to expire, then go to next state
+MainFunc6:
+    jp TickTimer
 
 PlayerGotSniped:
     call EraseQuickTimeEventButtonIndicators
     ld hl, shoot_song
     call StartSong
     ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 7
-    ldh [hNextMainState], a ; player died
-    ld a, 6
-    ldh [hMainState], a ; delay
+    ld b, 7 ; player died
+    call SetTimerWithNextStateTimeout
     ; TODO: maybe shake the screen?
     ret
 
@@ -3073,56 +3085,32 @@ MainFunc7: ; player died
     ld hl, youdie_song
     call StartSong
     ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 8
-    ldh [hNextMainState], a ; fade to black step 1
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 8 ; fade to black step 1
+    jp SetTimerWithNextStateTimeout
 
 MainFunc8: ; fade to black step 1
     ld a, %01101111
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
     ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 9
-    ldh [hNextMainState], a ; fade to black step 2
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 9 ; fade to black step 2
+    jp SetTimerWithNextStateTimeout
 
 MainFunc9: ; fade to black step 2
     ld a, %10111111
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
     ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 10
-    ldh [hNextMainState], a
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 10 ; fade to black step 3
+    jp SetTimerWithNextStateTimeout
 
 MainFunc10:  ; fade to black step 3
     ld a, %11111111
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
     ld a, 10
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 11
-    ldh [hNextMainState], a ; game over
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 11 ; game over
+    jp SetTimerWithNextStateTimeout
 
 MainFunc11: ; game over
     ld a, 20
@@ -3133,79 +3121,43 @@ MainFunc12: ; fade to white step 1
     ld a, %00000110
     ldh [hShadowBGP], a
     ld a, 3
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 13
-    ldh [hNextMainState], a ; fade to white step 2
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 13 ; fade to white step 2
+    jp SetTimerWithNextStateTimeout
 
 MainFunc13: ; fade to white step 2
     ld a, %00000001
     ldh [hShadowBGP], a
     ld a, 3
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 14
-    ldh [hNextMainState], a ; fade to white step 3
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 14 ; fade to white step 3
+    jp SetTimerWithNextStateTimeout
 
 MainFunc14: ; fade to white step 3
     ld a, %00000000
     ldh [hShadowBGP], a
     ld a, 4
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 15
-    ldh [hNextMainState], a ; fade from white step 1
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 15 ; fade from white step 1
+    jp SetTimerWithNextStateTimeout
 
 MainFunc15: ; fade from white step 1
     ld a, %00000001
     ldh [hShadowBGP], a
     ld a, 3
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 16
-    ldh [hNextMainState], a ; fade to white step 2
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 16 ; fade to white step 2
+    jp SetTimerWithNextStateTimeout
 
 MainFunc16: ; fade from white step 2
     ld a, %00000110
     ldh [hShadowBGP], a
     ld a, 3
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 17
-    ldh [hNextMainState], a ; fade to white step 3
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 17 ; fade to white step 3
+    jp SetTimerWithNextStateTimeout
 
 MainFunc17: ; fade from white step 3 (back to normal intensity)
     ld a, %00011011
     ldh [hShadowBGP], a
     ld a, 8
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 18
-    ldh [hNextMainState], a ; check if player died or won
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 18 ; check if player died or won
+    jp SetTimerWithNextStateTimeout
 
 MainFunc18:
     ldh a, [hPlayerWon]
@@ -3221,14 +3173,8 @@ MainFunc18:
     ld hl, youwin_song
     call StartSong
     ld a, 70
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 19
-    ldh [hNextMainState], a ; prepare for next level
-    ld a, 6
-    ldh [hMainState], a ; delay
-    ret
+    ld b, 19 ; prepare for next level
+    jp SetTimerWithNextStateTimeout
 
 MainFunc19: ; advance to next level
     ldh a, [hCurrentLevel]
@@ -3263,13 +3209,8 @@ MainFunc20: ; setup game over screen
     call StartSong
 
     ld a, 32
-    ldh [hTimerHi], a
-    ld a, TIMER_SPEED
-    ldh [hTimerLo], a
-    ld a, 21
-    ldh [hNextMainState], a ; game over screen done
-    ld a, 6
-    ldh [hMainState], a ; delay
+    ld b, 21 ; game over screen done
+    call SetTimerWithNextStateTimeout
 
     jp TurnOnLCD
 
