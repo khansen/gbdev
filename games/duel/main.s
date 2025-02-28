@@ -2477,6 +2477,10 @@ SetMemory:
 
 PrintWantedPosterSum:
     ld a, [hCurrentLevel]
+    cp a, 50
+    jr c, .noClamp
+    ld a, 49
+    .noClamp:
     sla a
     ld e, a
     ld d, 0
@@ -2680,6 +2684,10 @@ db 4, "9500"
 
 PrintWantedPosterName:
     ld a, [hCurrentLevel]
+    cp a, 50
+    jr c, .noClamp
+    ld a, 49
+    .noClamp:
     sla a
     ld e, a
     ld d, 0
@@ -2921,8 +2929,33 @@ def PLAYER_GUN_START_X equ 100
 def PLAYER_GUN_START_Y equ 64
 def PLAYER_GUN_START_TILE equ $d2
 
-DrawPlayerGun:
-    call BeginDrawSprites
+DrawPlayerGunWithRecoil:
+    ldh a, [hPlayerGunJitterIndex]
+    cp a, 38
+    jr c, .recoil
+    ld b, PLAYER_GUN_START_Y
+    ld c, PLAYER_GUN_START_X
+    jp DrawPlayerGun
+    .recoil:
+    inc a
+    ldh [hPlayerGunJitterIndex], a
+    add a, LOW(.recoilDelta)
+    ld c, a
+    ld b, HIGH(.recoilDelta)
+    jr nc, .skipInc
+    inc b
+    .skipInc:
+    ld a, [bc]
+    add a, PLAYER_GUN_START_Y
+    ld b, a
+    sub a, PLAYER_GUN_START_Y
+    add a, PLAYER_GUN_START_X
+    ld c, a
+    jp DrawPlayerGun
+.recoilDelta:
+db 0, 5, 7, 6, 3, 0, -4, -5, -5, -2, 1, 3, 4, 3, 1, -1, -3, -3, -3, -1, 1, 2, 3, 2, 1, -1, -2, -2, -1, 0, 1, 1, 1, 1, 0, -1, -1, -1, -1, 0
+
+DrawPlayerGunWithHorizontalJitter:
     ldh a, [hPlayerGunJitterIndex]
     inc a
     ldh [hPlayerGunJitterIndex], a
@@ -2939,6 +2972,16 @@ DrawPlayerGun:
     add a, PLAYER_GUN_START_X
     ld c, a
     ld b, PLAYER_GUN_START_Y
+    jp DrawPlayerGun
+.HorizontalJitter:
+db 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 2, 2, 1, 1, 0, 0, 0, 0, 0, 1, 2, 1, 1, 2, 1, 1, 0, 0, 0, 0, 1, 1
+
+; B = top left Y
+; C = top left X
+DrawPlayerGun:
+    push bc
+    call BeginDrawSprites
+    pop bc
     ; 0, 0
     ld a, b
     ld [hli], a ; y
@@ -3131,8 +3174,6 @@ DrawPlayerGun:
     ld [hli], a  ; attributes
     call EndDrawSprites
     ret
-.HorizontalJitter:
-db 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 2, 2, 1, 1, 0, 0, 0, 0, 0, 1, 2, 1, 1, 2, 1, 1, 0, 0, 0, 0, 1, 1
 
 
 ; Program main function, called each frame in NMI handler
@@ -3385,7 +3426,7 @@ MainFunc4:
 ; time to shoot!
 MainFunc5:
     call HideAllSprites
-    call DrawPlayerGun
+    call DrawPlayerGunWithHorizontalJitter
     ldh a, [hButtonsPressed]
     and a, PADF_LEFT | PADF_RIGHT | PADF_UP | PADF_DOWN | PADF_B | PADF_A
     jr nz, .validateButtonPresses
@@ -3423,26 +3464,33 @@ MainFunc5:
     .wrongButtonsPressed:
     ; opponent draws and shoots
     ; TODO: draw puff of smoke from player gun
-    ; TODO: player gun recoils
     call CopyOpponentDrawGunStringsToVramBuffer
     ld hl, shoot_song
     call StartSong
     call EraseQuickTimeEventButtonIndicators
     ld a, 0
     ldh [hPlayerWon], a
+    ldh [hPlayerGunJitterIndex], a
+    ld a, 3
+    ld de, MainFunc12_TimerTimeout
+    call SetTimer
     ld a, 12
     ldh [hMainState], a ; after shot
     ret
     .shootGunSuccess:
     ; player wins
     ; TODO: draw puff of smoke from player gun
-    ; TODO: player gun recoils
     call CopyOpponentDrawGunStringsToVramBuffer
     ld hl, shoot_song
     call StartSong
     call EraseQuickTimeEventButtonIndicators
+    ld a, 0
+    ldh [hPlayerGunJitterIndex], a
     ld a, 1
     ldh [hPlayerWon], a
+    ld a, 3
+    ld de, MainFunc12_TimerTimeout
+    call SetTimer
     ld a, 12
     ldh [hMainState], a ; after shot
     ret
@@ -3533,26 +3581,45 @@ MainFunc11: ; game over
     ldh [hMainState], a ; setup game over screen
     jp TurnOffLCD
 
+MainFunc12_TimerTimeout:
+    ld a, 13 ; fade to white step 2
+    ldh [hMainState], a
+    ld a, 3
+    ld de, MainFunc13_TimerTimeout
+    jp SetTimer
+
 MainFunc12: ; fade to white step 1
     ld a, %00000110
     ldh [hShadowBGP], a
-    ld a, 3
-    ld b, 13 ; fade to white step 2
-    jp SetTimerWithNextStateTimeout
+    call HideAllSprites
+    call DrawPlayerGunWithRecoil
+    jp TickTimer
+
+MainFunc13_TimerTimeout:
+    ld a, 14 ; fade to white step 3
+    ldh [hMainState], a
+    ld a, 4
+    ld de, MainFunc14_TimerTimeout
+    jp SetTimer
 
 MainFunc13: ; fade to white step 2
     ld a, %00000001
     ldh [hShadowBGP], a
-    ld a, 3
-    ld b, 14 ; fade to white step 3
-    jp SetTimerWithNextStateTimeout
+    call HideAllSprites
+    call DrawPlayerGunWithRecoil
+    jp TickTimer
+
+MainFunc14_TimerTimeout:
+    ld a, 15 ; fade from white step 1
+    ldh [hMainState], a
+    ret
 
 MainFunc14: ; fade to white step 3
     ld a, %00000000
     ldh [hShadowBGP], a
-    ld a, 4
-    ld b, 15 ; fade from white step 1
-    jp SetTimerWithNextStateTimeout
+    call HideAllSprites
+    call DrawPlayerGunWithRecoil
+    jp TickTimer
 
 MainFunc15: ; fade from white step 1
     ld a, %00000001
