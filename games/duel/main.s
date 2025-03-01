@@ -57,6 +57,8 @@ hPlayerGunJitterIndex: db
 
 hPlayerWon: db
 
+def MAX_LEVEL equ 50
+
 hCurrentLevel: db
 
 ; --- Begin Sound engine
@@ -2477,9 +2479,9 @@ SetMemory:
 
 PrintWantedPosterSum:
     ld a, [hCurrentLevel]
-    cp a, 50
+    cp a, MAX_LEVEL
     jr c, .noClamp
-    ld a, 49
+    ld a, MAX_LEVEL - 1
     .noClamp:
     sla a
     ld e, a
@@ -2684,9 +2686,9 @@ db 4, "9500"
 
 PrintWantedPosterName:
     ld a, [hCurrentLevel]
-    cp a, 50
+    cp a, MAX_LEVEL
     jr c, .noClamp
-    ld a, 49
+    ld a, MAX_LEVEL - 1
     .noClamp:
     sla a
     ld e, a
@@ -3219,6 +3221,10 @@ MainFunc0: ; setup level start
     ld bc, $200
     call SetMemory
 
+; start on highest level
+;    ld a, MAX_LEVEL - 1
+;    ldh [hCurrentLevel], a
+
     ld hl, LevelStartTileMapData
     call WriteVramStrings
 
@@ -3291,9 +3297,9 @@ MainFunc3_TimerTimeout:
     call Prng
     and a, 31
     cp a, MAX_QUICK_TIME_EVENT_KIND+1
-    jr c, .noClamp
+    jr c, .noClampEventKind
     sub a, MAX_QUICK_TIME_EVENT_KIND
-    .noClamp:
+    .noClampEventKind:
 ;    ld a, 6
     ldh [hQuickTimeEventKind], a
     ld e, a
@@ -3305,10 +3311,14 @@ MainFunc3_TimerTimeout:
     ld a, 0
     ldh [hQuickTimeEventButtonsSatisfied], a
     ldh a, [hCurrentLevel]
+    cp a, MAX_LEVEL
+    jr c, .noClampLevel
+    ld a, MAX_LEVEL - 1
+    .noClampLevel:
     sla a
     sla a
     ld b, a ; current level times 4
-    ld a, 192
+    ld a, 200 ; maximum timer (slowest/easiest)
     sub a, b
     ldh [hQuickTimeEventTimer], a
     srl a
@@ -3655,7 +3665,7 @@ MainFunc18:
     call CopyOpponentDeadStringsToVramBuffer
     ld hl, youwin_song
     call StartSong
-    ld a, 70
+    ld a, 66
     ld b, 19 ; prepare for next level
     jp SetTimerWithNextStateTimeout
 
