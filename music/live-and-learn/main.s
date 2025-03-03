@@ -152,24 +152,6 @@ wTracks:
 
 ; --- End Sound engine
 
-rsreset
-def Object_Next      rw 1                           ; 00
-def Object_State     rb 1                           ; 02
-def Object_SpeedX_Frac rb 1                         ; 03
-def Object_SpeedX_Int  rb 1                         ; 04
-def Object_PosX_Frac rb 1                           ; 05
-def Object_PosX_Int  rb 1                           ; 06
-def Object_SpeedY_Frac rb 1                         ; 07
-def Object_SpeedY_Int  rb 1                         ; 08
-def Object_PosY_Frac rb 1                           ; 09
-def Object_PosY_Int  rb 1                           ; 0A
-def Object_SIZEOF    rb 0                           ; 0B
-
-def MAX_OBJECTS equ 12
-
-wObjectsArena:
-  ds Object_SIZEOF * MAX_OBJECTS
-
 SECTION "ROM Bank $000", ROM0[$0]
 
 ; --- Begin courtesy of https://github.com/vinheim3/tetris-gb-disasm/ ---
@@ -2187,7 +2169,7 @@ Genesis:
 
 	; Turn the LCD on
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG9800
-	ld [rLCDC], a
+	ldh [rLCDC], a
 
 Done:
     halt
