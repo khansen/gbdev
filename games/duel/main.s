@@ -239,6 +239,7 @@ VBlankInterruptHandler:
 	push hl
 
         ldh a, [hProcessingVBlank]
+        or a
         jr nz, .skipVBlankProcessing
         inc a
         ldh [hProcessingVBlank], a
