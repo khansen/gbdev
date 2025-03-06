@@ -3,4 +3,3 @@ LiveAndLearn.o
 
 [ramsections]
 bank 0 slot $c000 orga $c000 Wram0_c000
-bank 0 slot $ff80 orga $ff80 Hram0_ff80
