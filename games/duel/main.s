@@ -311,12 +311,12 @@ PollInput:
 	cpl
 	and  $0f
 	or   b
-	ld   c, a
+	ld   b, a
 	ldh  a, [hButtonsHeld]
-	xor  c
-	and  c
+	xor  b
+	and  b
 	ldh  [hButtonsPressed], a
-	ld   a, c
+	ld   a, b
 	ldh  [hButtonsHeld], a
 	ld   a, $30
 	ldh  [rP1], a
