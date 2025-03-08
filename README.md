@@ -4,9 +4,11 @@
 
 ### Game Boy
 
-- Install rgbds: https://rgbds.gbdev.io/ (tested on version: 0.8.0)
+- Install rgbds: https://rgbds.gbdev.io/ (tested on version: 0.9.1)
 - Clone the repository https://github.com/khansen/xm2nes/, check out the `xm2gb` branch, build and install the `xm2gb` tool
 - In a project folder (e.g., `music/super-mario-land/`), run `make`
+
+Some projects use the WLA-DX assembler (version 10.6): https://github.com/vhelin/wla-dx
 
 ### Game Boy Advance
 
