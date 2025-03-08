@@ -68,6 +68,8 @@
     SLOT 6 START $E000 SIZE $1E00  ; ECHO RAM (DO NOT USE)
     SLOT 7 START $FE00 SIZE $00A0  ; Object Attribute Memory (OAM)
     SLOT 8 START $FF00 SIZE $0080  ; I/O Registers
+    SLOT 9 START $FF80 SIZE $007F  ; High RAM (HRAM)
+    SLOT 10 START $FFFF SIZE $0001 ; Interrupt Enable Register
 .ENDME
 
 .banksize $4000
@@ -109,52 +111,61 @@
 
 .define NUM_TRACKS 4
 
-.RAMSECTION Wram0_c000 align 128
+.RAMSECTION Hram0_ff80
 
-wVramBuffer:
-    ds 128
+hOamDmaFunction: ds $0a
+
+hOamOffset: db
+
+hButtonsHeld: db
+
+hButtonsPressed: db
+
+hProcessingVBlank: db
+
+hMainState: db
+
+hVramBufferOffset: db
+
+hScrollX: db
+
+hScrollY: db
+
+hFrameCounter: db
+
+; --- Begin Sound engine
+
+hInstrumentTable: dw
+
+hPatternTable: dw
+
+hOrder: dw
+
+hMasterVol: db
+
+hShadowNR12: db
+hShadowNR22: db
+hShadowNR32: db
+hShadowNR42: db
+
+; bits 4..0: whether channel is muted (1=yes)
+; bit 5: paused (1=yes)
+hSoundStatus: db
+
+; --- End Sound engine
+
+.ENDS
+
+.RAMSECTION Wram0_c000
 
 wOam:
     ds OAM_COUNT*4
 
-wOamOffset: db
-
-wButtonsHeld: db
-
-wButtonsPressed: db
-
-wProcessingVBlank: db
-
-wMainState: db
-
-wVramBufferOffset: db
-
-wScrollX: db
-
-wScrollY: db
-
-wFrameCounter: db
+wVramBuffer:
+    ds 128
 
 ; --- Begin Sound engine
 
-wInstrumentTable: dw
-
-wPatternTable: dw
-
-wOrder: dw
-
-wMasterVol: db
-
-wShadowNR12: db
-wShadowNR22: db
-wShadowNR32: db
-wShadowNR42: db
-
-; bits 4..0: whether channel is muted (1=yes)
-; bit 5: paused (1=yes)
-wSoundStatus: db
-
-.align 128
 wTracks INSTANCEOF Track NUM_TRACKS
 
 ; --- End Sound engine
@@ -280,23 +291,23 @@ VBlankInterruptHandler:
 	push de
 	push hl
 
-        ld a,[wProcessingVBlank]
+        ldh a,[<hProcessingVBlank]
         or a
         jr nz, .skipVBlankProcessing
         inc a
-        ld [wProcessingVBlank], a
+        ldh [<hProcessingVBlank], a
 
         call FlushVramBuffer
-	    call OamDmaFunction
-        ld a, [wScrollX]
-        ld [rSCX], a
-        ld a, [wScrollY]
-        ld [rSCY], a
+	    call hOamDmaFunction
+        ldh a, [<hScrollX]
+        ldh [<rSCX], a
+        ldh a, [<hScrollY]
+        ldh [<rSCY], a
         call PollInput
         call UpdateSound
         call GoMainFunction
 
-        ld hl, wProcessingVBlank
+        ld hl, hProcessingVBlank
         dec [hl]
 
         .skipVBlankProcessing:
@@ -309,7 +320,7 @@ VBlankInterruptHandler:
 
 OamDmaFunction:
 	ld   a, >wOam
-	ld  [rDMA], a
+	ldh  [<rDMA], a
 	ld   a, OAM_COUNT
 .wait:
 	dec  a
@@ -318,41 +329,39 @@ OamDmaFunction:
 
 PollInput:
 	ld   a, $20
-	ld  [rP1], a
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
+	ldh  [<rP1], a
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
 	cpl
-    sla a
-    sla a
-    sla a
-    sla a
+	and  $0f
+	swap a
 	ld   b, a
 	ld   a, $10
-	ld  [rP1], a
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
-	ld  a, [rP1]
+	ldh  [<rP1], a
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
+	ldh  a, [<rP1]
 	cpl
 	and  $0f
 	or   b
 	ld   b, a
-	ld  a, [wButtonsHeld]
+	ldh  a, [<hButtonsHeld]
 	xor  b
 	and  b
-	ld  [wButtonsPressed], a
+	ldh  [<hButtonsPressed], a
 	ld   a, b
-	ld  [wButtonsHeld], a
+	ldh  [<hButtonsHeld], a
 	ld   a, $30
-	ld  [rP1], a
+	ldh  [<rP1], a
 	ret
 
 Begin2:
@@ -364,8 +373,7 @@ Begin2:
 	ld   b, $00
 
 .clear2ndWram:
-	ld   [hl], a
-	dec hl
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clear2ndWram
 
@@ -376,51 +384,51 @@ Reset:
 ; allow vblank and not serial
 	ld   a, IEF_VBLANK
 	di
-	ld  [rIF], a
-	ld  [rIE], a
+	ldh  [<rIF], a
+	ldh  [<rIE], a
 
 ; clear hw regs
 	xor  a
-	ld  [rSCY], a
-	ld  [rSCX], a
-	ld  [rSTAT], a
-	ld  [rSB], a
-	ld  [rSC], a
-	ld  [rNR52], a
+	ldh  [<rSCY], a
+	ldh  [<rSCX], a
+	ldh  [<rSTAT], a
+	ldh  [<rSB], a
+	ldh  [<rSC], a
+	ldh  [<rNR52], a
 
 ; turn on LCD, and wait until in vblank area (specifically line $94)
 	ld   a, LCDCF_ON
-	ld  [rLCDC], a
+	ldh  [<rLCDC], a
 
 .waitUntilVBlank:
-	ld  a, [rLY]
+	ldh  a, [<rLY]
 	cp   $94
 	jr   nz, .waitUntilVBlank
 
 ; turn off lcd again
 	ld   a, LCDCF_OFF|LCDCF_OBJON|LCDCF_BGON
-	ld  [rLCDC], a
+	ldh  [<rLCDC], a
 
 ; standard palettes
 	ld   a, %11100100
-	ld  [rBGP], a
-	ld  [rOBP0], a
+	ldh  [<rBGP], a
+	ldh  [<rOBP0], a
 
 ; palette with white as non-transparent, eg for jumping dancers
 	ld   a, %11000100
-	ld  [rOBP1], a
+	ldh  [<rOBP1], a
 
 ; all sound on
 	ld   a, $80
-	ld  [rAUDENA], a
+	ldh  [<rAUDENA], a
 
 ; channels outputted to all sound S01 and S02
 	ld   a, %11111111
-	ld  [rAUDTERM], a
+	ldh  [<rAUDTERM], a
 
 ; vol max without setting vin
     ld   a, $77
-    ld  [rAUDVOL], a
+    ldh  [<rAUDVOL], a
 
 ; set rom bank for some reason, and set SP
 	ld   a, $01
@@ -433,8 +441,7 @@ Reset:
 	ld   b, $00
 
 .clearLastPage:
-	ld   [hl], a
-	dec  l
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clearLastPage
 
@@ -444,8 +451,7 @@ Reset:
 	ld   b, $00
 
 .clear1stWram:
-	ld   [hl], a
-	dec hl
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clear1stWram
 
@@ -456,13 +462,12 @@ Reset:
 	ld   hl, $9fff
 	ld   c, $20
 	ld   a, 1
-    ld [rVBK], a ; select bank 1
+    ldh [<rVBK], a ; select bank 1
     dec  a
 	ld   b, $00
 
 .clearVramBank1:
-	ld   [hl], a
-	dec hl
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clearVramBank1
 
@@ -473,12 +478,11 @@ Reset:
 	ld   hl, $9fff
 	ld   c, $20
 	xor  a
-    ld [rVBK], a ; select bank 0
+    ldh [<rVBK], a ; select bank 0
 	ld   b, $00
 
 .clearVramBank0:
-	ld   [hl], a
-	dec hl
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clearVramBank0
 
@@ -490,8 +494,7 @@ Reset:
 	ld   b, $00
 
 .clearOam:
-	ld   [hl], a
-	dec l
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clearOam
 
@@ -500,32 +503,43 @@ Reset:
 	ld   b, $7f
 
 .clearHram:
-	ld   [hl], a
-    dec l
+	ld   [hl-], a
 	dec  b
 	jr   nz, .clearHram
+
+; copy OAM DMA function, plus 2 extra bytes
+	ld   c, <hOamDmaFunction
+;	ld   b, hOamDmaFunction.end-hOamDmaFunction+2
+    ld   b, hOamOffset-hOamDmaFunction+2
+	ld   hl, OamDmaFunction
+
+.copyOamDmaFunc:
+	ld   a, [hl+]
+	ldh  [c], a
+	inc  c
+	dec  b
+	jr   nz, .copyOamDmaFunc
 
 ; clear some hw regs
 	ei
 	xor  a
-	ld  [rIF], a
-	ld  [rWY], a
-	ld  [rWX], a
-	ld  [rTMA], a
+	ldh  [<rIF], a
+	ldh  [<rWY], a
+	ldh  [<rWX], a
+	ldh  [<rTMA], a
         jp Genesis
 
 CopyFromHLIntoWav3Ram:
-	push de
-	ld   de, _AUD3WAVERAM
+	push bc
+	ld   c, <_AUD3WAVERAM
 @loop:
-	ld   a, [hl]
-	inc hl
-	ld  [de], a
-	inc  de
-	ld   a, e
+	ld   a, [hl+]
+	ldh  [c], a
+	inc  c
+	ld   a, c
 	cp   <_AUD3WAVERAM + 16
 	jr   nz, @loop
-	pop  de
+	pop  bc
 	ret
 
 ; === End courtesy of https://github.com/vinheim3/tetris-gb-disasm/ ===
@@ -533,31 +547,27 @@ CopyFromHLIntoWav3Ram:
 ; --- Begin gfx-related procedures ---
 
 FlushVramBuffer:
-    ld a, [wVramBufferOffset]
+    ldh a, [<hVramBufferOffset]
     or a, a
     ret z
     xor a
-    ld [wVramBufferOffset], a
-    ld [rVBK], a ; select bank 0
+    ldh [<hVramBufferOffset], a
+    ldh [<rVBK], a ; select bank 0
     ld hl, wVramBuffer
     jp WriteVramStrings
 
 WriteVramStrings:
     ; hl = address of data
-    ld a, [hl]
-    inc hl
+    ld a, [hli]
     or a, a
     ret z
     ld d, a
-    ld a, [hl]
-    inc hl
+    ld a, [hli]
     ld e, a
-    ld a, [hl]
-    inc hl
+    ld a, [hli]
     ld b, a
     @loop:
-    ld a, [hl]
-    inc hl
+    ld a, [hli]
     ld [de], a
     inc de
     dec b
@@ -569,21 +579,18 @@ WriteVramStrings:
 ; returns HL = vram buffer pointer
 BeginVramString:
     ld hl, wVramBuffer
-    ld a, [wVramBufferOffset]
+    ldh a, [<hVramBufferOffset]
     push bc
     ld b, 0
     ld c, a
     add hl, bc
     ld a, d
-    ld [hl], a ; high address
-    inc l
+    ld [hli], a ; high address
     ld a, e
-    ld [hl], a ; low address
-    inc l
+    ld [hli], a ; low address
     pop bc
     ld a, c
-    ld [hl], a ; count
-    inc l
+    ld [hli], a ; count
     ret
 
 EndVramString:
@@ -591,17 +598,16 @@ EndVramString:
     ld [hl], a
     ld a, l
     sub a, <wVramBuffer
-    ld [wVramBufferOffset], a
+    ldh [<hVramBufferOffset], a
     ret
 
 HideAllSprites:
     ld hl, wOam
     xor a
-    ld [wOamOffset], a
+    ldh [<hOamOffset], a
     ld b, OAM_COUNT
     @loop:
-    ld [hl], a
-    inc l
+    ld [hli], a
     inc l
     inc l
     inc l
@@ -612,7 +618,7 @@ HideAllSprites:
 ; Out: hl=address of sprite
 BeginDrawSprites:
     ld hl, wOam
-    ld a, [wOamOffset]
+    ldh a, [<hOamOffset]
     ld b, 0
     ld c, a
     add hl, bc
@@ -621,7 +627,7 @@ BeginDrawSprites:
 EndDrawSprites:
     ld a, l
     sub a, <wOam
-    ld [wOamOffset], a
+    ldh [<hOamOffset], a
     ret
 
 ; --- End gfx-related procedures ---
@@ -633,37 +639,35 @@ StartSong:
     ld b, NUM_TRACKS
     ld de, wTracks + Track.Order_Pos
     @loop:
-    ld a, [hl] ; order pos
-    inc hl
+    ld a, [hli] ; order pos
     ld [de], a ; Order_Pos
     cp a, $ff ; channel not in use?
     jr z, @skip
-    ld a, [hl] ; speed
-    inc hl
+    ld a, [hli] ; speed
     ; slow it down by 8x - useful for debugging
     ; sla a
     ; sla a
     ; sla a
     @skip:
     ld c, a
-    inc e ; Effect_Kind
+    inc de ; Effect_Kind
     xor a, a
     ld [de], a ; Effect_Kind
-    dec e ; Order_Pos
-    dec e ; Pattern_Ptr (hi)
-    dec e ; Pattern_Ptr (lo)
-    dec e ; Pattern_RowStatus
-    dec e ; Pattern_Row
+    dec de ; Order_Pos
+    dec de ; Pattern_Ptr (hi)
+    dec de ; Pattern_Ptr (lo)
+    dec de ; Pattern_RowStatus
+    dec de ; Pattern_Row
     xor a, a
     ld [de], a ; Pattern_Row
-    dec e ; Pattern_RowCount
+    dec de ; Pattern_RowCount
     inc a ; 1
     ld [de], a ; Pattern_RowCount
-    dec e ; Tick
+    dec de ; Tick
     ld a, c ; speed
     dec a
     ld [de], a ; Tick
-    dec e ; Speed
+    dec de ; Speed
     inc a
     ld [de], a ; Speed
     ld a, e
@@ -671,15 +675,15 @@ StartSong:
     ld e, a
     ld a, $f0
     ld [de], a ; MasterVol
-    inc e
+    inc de
     xor a, a
     ld [de], a ; PeriodIndex
-    inc e
+    inc de
     ld [de], a ; PeriodLo
-    inc e
+    inc de
     ld [de], a ; PeriodHi
-    inc e ; Square_DutyCtrl
-    inc e ; Envelope_Phase
+    inc de ; Square_DutyCtrl
+    inc de ; Envelope_Phase
     ld [de], a ; Envelope_Phase
     ld a, e
     add a, _sizeof_Track - Track.Envelope_Phase + Track.Order_Pos
@@ -687,27 +691,23 @@ StartSong:
     dec b
     jr nz, @loop
     ; Instrument table
-    ld a, [hl]
-    inc hl
-    ld [wInstrumentTable], a
-    ld a, [hl]
-    inc hl
-    ld [wInstrumentTable+1], a
+    ld a, [hli]
+    ldh [<hInstrumentTable], a
+    ld a, [hli]
+    ldh [<hInstrumentTable+1], a
     ; Pattern table
-    ld a, [hl]
-    inc hl
-    ld [wPatternTable], a
-    ld a, [hl]
-    inc hl
-    ld [wPatternTable+1], a
+    ld a, [hli]
+    ldh [<hPatternTable], a
+    ld a, [hli]
+    ldh [<hPatternTable+1], a
     ; HL now points to order data
     ld a, l
-    ld [wOrder], a
+    ldh [<hOrder], a
     ld a, h
-    ld [wOrder+1], a
+    ldh [<hOrder+1], a
 
     ld a, $f0
-    ld [wMasterVol], a
+    ldh [<hMasterVol], a
     ret
 
 ; Volume envelope states
@@ -730,8 +730,7 @@ UpdateSound:
     ld b, 0 ; track index
     ld hl, wTracks; + SIZEOF
     @loop:
-    ld a, [hl] ; Speed
-    inc l
+    ld a, [hli] ; Speed
     cp a, $ff   ; is track used?
     jr nz, @process_track
     ld de, _sizeof_Track
@@ -747,10 +746,8 @@ UpdateSound:
     jp @mixer_tick
     @next_row:
     xor a, a
-    ld [hl], a ; Tick
-    inc l
-    ld a, [hl] ; Pattern_RowCount
-    inc l
+    ld [hli], a ; Tick
+    ld a, [hli] ; Pattern_RowCount
     inc [hl]    ; Pattern_Row
     cp a, [hl]  ; rowCount == row?
     jr z, @end_of_pattern
@@ -758,18 +755,17 @@ UpdateSound:
     @end_of_pattern:
     push hl ; Pattern_Row
     xor a, a
-    ld [hl], a ; Pattern_Row = 0
-    inc l
+    ld [hli], a ; Pattern_Row = 0
     inc l ; Pattern_Ptr (lo)
     inc l ; Pattern_Ptr (hi)
     inc l ; Order_Pos
     @pre_order_loop:
     ld a, [hl] ; Order_Pos
     ld c, a
-    ld a, [wOrder]
+    ldh a, [<hOrder]
     add a, c
     ld e, a
-    ld a, [wOrder+1]
+    ldh a, [<hOrder+1]
     adc a, 0
     ld d, a
     @order_fetch_loop:
@@ -781,10 +777,10 @@ UpdateSound:
     ; pattern number
     add a, a ; pattern number * 2
     ld c, a
-    ld a, [wPatternTable+1]
+    ldh a, [<hPatternTable+1]
     adc a, 0
     ld d, a
-    ld a, [wPatternTable]
+    ldh a, [<hPatternTable]
     add a, c
     ld e, a
     jr nc, @skip_inc_d
@@ -793,13 +789,11 @@ UpdateSound:
     ld a, [de]
     dec l ; Pattern_Ptr (hi)
     dec l ; Pattern_Ptr (lo)
-    ld [hl], a ; Pattern_Ptr (lo)
-    inc l
+    ld [hli], a ; Pattern_Ptr (lo)
     inc de
     ld c, a
     ld a, [de]
-    ld [hl], a ; Pattern_Ptr (hi)
-    dec l
+    ld [hl-], a ; Pattern_Ptr (hi)
     ld e, c
     ld d, a
     ld a, [de] ; row count
@@ -807,8 +801,7 @@ UpdateSound:
     call IncPatternPtr
     pop hl ; Pattern_Row
     dec l ; Pattern_RowCount
-    ld [hl], a ; Pattern_RowCount
-    inc l
+    ld [hli], a ; Pattern_RowCount
     inc l ; Pattern_RowStatus
     jr @fetch_row_status
     @order_special:
@@ -817,17 +810,14 @@ UpdateSound:
     ld [hl], a ; Order_Pos
     jr @pre_order_loop
     @no_new_pattern:
-    ld a, [hl] ; Pattern_Row
-    inc l
+    ld a, [hli] ; Pattern_Row
     and a, 7
     jr nz, @check_row_status
     ; prepare to fetch row status
     inc l ; Pattern_Ptr (lo)
-    ld a, [hl] ; Pattern_Ptr (lo)
-    inc l
+    ld a, [hli] ; Pattern_Ptr (lo)
     ld e, a
-    ld a, [hl] ; Pattern_Ptr (hi)
-    dec l
+    ld a, [hl-] ; Pattern_Ptr (hi)
     ld d, a
     dec l ; Pattern_RowStatus
     @fetch_row_status:
@@ -836,8 +826,7 @@ UpdateSound:
     ; fetch row status for upcoming 8 rows
     ld a, [de] ; pattern byte
     inc de
-    ld [hl], a ; Pattern_RowStatus
-    inc l
+    ld [hli], a ; Pattern_RowStatus
     call IncPatternPtr
     dec l ; Pattern_RowStatus
     @check_row_status:
@@ -848,17 +837,14 @@ UpdateSound:
     @process_pattern_data:
     ; HL = Pattern_RowStatus
     dec l ; Pattern_Row
-    ld a, [hl] ; Pattern_Row
-    inc l
+    ld a, [hli] ; Pattern_Row
     inc l ; Pattern_Ptr (lo)
     and a, 7
     jr z, @pattern_fetch_loop
     ; for rows not multiple of 8, DE does not yet contain pattern data ptr because we didn't fetch row status byte
-    ld a, [hl] ; Pattern_Ptr (lo)
-    inc l
+    ld a, [hli] ; Pattern_Ptr (lo)
     ld e, a
-    ld a, [hl] ; Pattern_Ptr (hi)
-    dec l
+    ld a, [hl-] ; Pattern_Ptr (hi)
     ld d, a
     @pattern_fetch_loop:
     ; HL = Pattern_Ptr (lo)
@@ -885,14 +871,12 @@ UpdateSound:
     inc l ; Pattern_Ptr (hi)
     inc l ; Order_Pos
     inc l ; Effect_Kind
-    ld [hl], a ; Effect_Kind
-    inc l
+    ld [hli], a ; Effect_Kind
     or a, a
     jr z, @skip_effect_init
     ld a, [de] ; pattern byte: effect param
     inc de
-    ld [hl], a ; Effect_Param
-    inc l
+    ld [hli], a ; Effect_Param
     ; clear effect state
     xor a, a
     ld [hl], a ; Effect_Pos
@@ -909,10 +893,8 @@ UpdateSound:
     call SetSpeed
     jr @pattern_fetch_loop
     @is_set_volume_command:
-    sla a
-    sla a
-    sla a
-    sla a ; new volume in upper 4 bits
+    and a, $f
+    swap a ; new volume in upper 4 bits
     or a, 1 ; indicates that volume was explicitly set
     push hl ; Pattern_Ptr (lo)
     push de
@@ -934,33 +916,27 @@ UpdateSound:
     inc l ; Pattern_Ptr (hi)
     inc l ; Order_Pos
     inc l ; Effect_Kind
-    ld a, [hl] ; Effect_Kind
-    inc l
+    ld a, [hli] ; Effect_Kind
     ld d, a
     inc l ; skip Effect_Param
     ; clear effect state
     xor a, a
-    ld [hl], a ; Effect_Pos
-    inc l
-    ld [hl], a ; Effect_Portamento_TargetPeriodLo
-    inc l
-    ld [hl], a ; Effect_Portamento_TargetPeriodHi
-    inc l
+    ld [hli], a ; Effect_Pos
+    ld [hli], a ; Effect_Portamento_TargetPeriodLo
+    ld [hli], a ; Effect_Portamento_TargetPeriodHi
     ld a, [hl] ; MasterVol
     srl a
     jr c, @skip ; CF=1 if the volume has been overridden by a previous volume command
     ld a, $78
     @skip:
     sla a
-    ld [hl], a ; MasterVol
-    inc l
+    ld [hli], a ; MasterVol
     inc l ; PeriodLo
     inc l ; PeriodHi
     inc l ; Square_DutyCtrl
     inc l ; Envelope_Phase
     ld a, ENV_RESET
-    ld [hl], a ; Envelope_Phase
-    dec l
+    ld [hl-], a ; Envelope_Phase
     ld a, d ; effect kind
     cp a, PORTAMENTO_EFFECT
     jr z, @init_slide
@@ -972,21 +948,17 @@ UpdateSound:
     ld e, a
     ld d, 0
     add hl, de
-    ld a, [hl] ; period lo
-    inc l
+    ld a, [hli] ; period lo
     ld d, a
     ld a, [hl] ; period hi
     pop hl ; Square_DutyCtrl
     dec l ; PeriodHi
-    ld [hl], a ; PeriodHi
-    dec l
+    ld [hl-], a ; PeriodHi
     ld a, d
-    ld [hl], a ; PeriodLo
-    dec l
+    ld [hl-], a ; PeriodLo
     ld a, c
     or a, $80 ; trigger channel
-    ld [hl], a ; PeriodIndex
-    inc l
+    ld [hli], a ; PeriodIndex
     inc l ; PeriodHi
     inc l ; Square_DutyCtrl
     ld a, [hl] ; Square_DutyCtrl
@@ -1017,18 +989,15 @@ UpdateSound:
     ld e, a
     ld d, 0
     add hl, de
-    ld a, [hl] ; period lo
-    inc l
+    ld a, [hli] ; period lo
     ld d, a
     ld a, [hl] ; period hi
     pop hl ; PeriodIndex
     dec l ; MasterVol
     dec l ; Effect_Portamento_TargetPeriodHi
-    ld [hl], a ; Effect_Portamento_TargetPeriodHi
-    dec l
+    ld [hl-], a ; Effect_Portamento_TargetPeriodHi
     ld a, d
-    ld [hl], a ; Effect_Portamento_TargetPeriodLo
-    dec l
+    ld [hl-], a ; Effect_Portamento_TargetPeriodLo
     ld a, c
     ld [hl], a ; Effect_Portamento_Ctrl
     pop hl ; Pattern_Ptr (lo)
@@ -1038,8 +1007,7 @@ UpdateSound:
     ; update effect
     ld de, Track.Effect_Kind - Track.Pattern_RowStatus
     add hl, de
-    ld a, [hl] ; Effect_Kind
-    inc l
+    ld a, [hli] ; Effect_Kind
     call EffectTick
     ; update envelope
     ld de, Track.Envelope_Phase - Track.Effect_Param
@@ -1080,15 +1048,13 @@ RenderChannel1:
     sla a
     .write_nr11:
     and $c0
-    ld [rNR11], a
+    ldh [<rNR11], a
 
     ; NR12
     ld hl, wTracks + Track.Envelope_Vol
     ld a, [hl] ; Envelope_Vol
-    srl a
-    srl a
-    srl a
-    srl a
+    swap a
+    and a, $f
     ld hl, wTracks + Track.MasterVol
     or a, [hl] ; MasterVol
     ld e, a
@@ -1097,7 +1063,7 @@ RenderChannel1:
     add hl, de
     ld a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld b, a
-    ld a, [wMasterVol]
+    ldh a, [<hMasterVol]
     or a, b
     ld e, a
     ld hl, VolumeTable
@@ -1107,69 +1073,64 @@ RenderChannel1:
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, @adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
-    ld [wShadowNR12], a
-    sla a
-    sla a
-    sla a
-    sla a ; initial channel volume in upper 4 bits
+    ldh [<hShadowNR12], a
+    swap a ; initial channel volume in upper 4 bits
     or a, $8
-    ld [rNR12], a
+    ldh [<rNR12], a
     jr .write_nr13
     @adjust_volume:
     ld b, a ; new volume
-    ld a, [wShadowNR12] ; old volume
+    ldh a, [<hShadowNR12] ; old volume
     cp a, b
     jr z, .write_nr13 ; jump if no change in volume
     jr nc, @decrease_volume ; old volume > new volume
     ; increase volume
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR12], a ; new volume
+    ldh [<hShadowNR12], a ; new volume
     sub a, c ; new volume - old volume
     ld b, a ; number of increments
     ld a, $8
     @inc_volume_loop:
-    ld [rNR12], a
+    ldh [<rNR12], a
     dec b
     jr nz, @inc_volume_loop
     jr .write_nr13
     @decrease_volume:
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR12], a ; new volume
+    ldh [<hShadowNR12], a ; new volume
     sub a, c ; new volume - old volume
     add a, 16
     ld b, a ; number of increments
     ld a, $8
     @dec_volume_loop:
-    ld [rNR12], a
+    ldh [<rNR12], a
     dec b
     jr nz, @dec_volume_loop
     .write_nr13:
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 0, a
     jr z, @not_muted
     ld a, $ff
-    ld [rNR13], a
+    ldh [<rNR13], a
     ld a, $7f
-    ld [rNR14], a
+    ldh [<rNR14], a
     jr @update_square_duty
     @not_muted:
     ; NR13
     ld hl, wTracks + Track.PeriodLo
-    ld a, [hl] ; PeriodLo
-    inc l
-    ld [rNR13], a
+    ld a, [hli] ; PeriodLo
+    ldh [<rNR13], a
     ; NR14
-    ld a, [hl] ; PeriodHi
-    dec l
+    ld a, [hl-] ; PeriodHi
     dec l ; PeriodIndex
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, @no_trigger
     or a, $80
     res 7, [hl] ; PeriodIndex - reset trigger flag
     @no_trigger:
-    ld [rNR14], a
+    ldh [<rNR14], a
 
     @update_square_duty:
     ld hl, wTracks + Track.Square_DutyCtrl
@@ -1189,10 +1150,8 @@ RenderChannel3:
     ; NR32
     ld hl, wTracks + Track.Envelope_Vol + _sizeof_Track*2
     ld a, [hl] ; Envelope_Vol
-    srl a
-    srl a
-    srl a
-    srl a
+    swap a
+    and a, $f
     ld hl, wTracks + Track.MasterVol + _sizeof_Track*2
     or a, [hl] ; MasterVol
     ld e, a
@@ -1201,47 +1160,44 @@ RenderChannel3:
     add hl, de
     ld a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld b, a
-    ld a, [wMasterVol]
+    ldh a, [<hMasterVol]
     or a, b
     ld e, a
     ld hl, VolumeTable
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld [wShadowNR32], a
-    sla a
-    sla a
-    sla a ; volume in bits 6-5
+    ldh [<hShadowNR32], a
+    swap a
+    srl a ; volume in bits 6-5
     and a, $60
     jr z, .write_nr32 ; mute (no sound)
     bit 5, a
     jr z, .write_nr32 ; 50% volume
     xor a, $40 ; 100% or 25% volume
     .write_nr32:
-    ld [rNR32], a
-    ld a, [wSoundStatus]
+    ldh [<rNR32], a
+    ldh a, [<hSoundStatus]
     bit 2, a
     jr z, @not_muted
     ld a, $ff
-    ld [rNR33], a
+    ldh [<rNR33], a
     ld a, $7f
-    ld [rNR34], a
+    ldh [<rNR34], a
     ret
     @not_muted:
     ; NR33
     ld hl, wTracks + Track.PeriodLo + _sizeof_Track*2
-    ld a, [hl] ; PeriodLo
-    inc l
-    ld [rNR33], a
+    ld a, [hli] ; PeriodLo
+    ldh [<rNR33], a
     ; NR34
-    ld a, [hl] ; PeriodHi
-    dec l
+    ld a, [hl-] ; PeriodHi
     dec l ; PeriodIndex
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, @no_trigger
     or a, $80
     res 7, [hl] ; PeriodIndex - reset trigger flag
     @no_trigger:
-    ld [rNR34], a
+    ldh [<rNR34], a
     ret
 
 RenderChannel2:
@@ -1256,15 +1212,13 @@ RenderChannel2:
     sla a
     .write_nr21:
     and $c0
-    ld [rNR21], a
+    ldh [<rNR21], a
 
     ; NR22
     ld hl, wTracks + Track.Envelope_Vol + _sizeof_Track
     ld a, [hl] ; Envelope_Vol
-    srl a
-    srl a
-    srl a
-    srl a
+    swap a
+    and a, $f
     ld hl, wTracks + Track.MasterVol + _sizeof_Track
     or a, [hl] ; MasterVol
     ld e, a
@@ -1273,7 +1227,7 @@ RenderChannel2:
     add hl, de
     ld a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld b, a
-    ld a, [wMasterVol]
+    ldh a, [<hMasterVol]
     or a, b
     ld e, a
     ld hl, VolumeTable
@@ -1283,69 +1237,64 @@ RenderChannel2:
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, @adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
-    ld [wShadowNR22], a
-    sla a
-    sla a
-    sla a
-    sla a ; initial channel volume in upper 4 bits
+    ldh [<hShadowNR22], a
+    swap a ; initial channel volume in upper 4 bits
     or a, $8
-    ld [rNR22], a
+    ldh [<rNR22], a
     jr .write_nr23
     @adjust_volume:
     ld b, a ; new volume
-    ld a, [wShadowNR22] ; old volume
+    ldh a, [<hShadowNR22] ; old volume
     cp a, b
     jr z, .write_nr23 ; jump if no change in volume
     jr nc, @decrease_volume ; old volume > new volume
     ; increase volume
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR22], a ; new volume
+    ldh [<hShadowNR22], a ; new volume
     sub a, c ; new volume - old volume
     ld b, a ; number of increments
     ld a, $8
     @inc_volume_loop:
-    ld [rNR22], a
+    ldh [<rNR22], a
     dec b
     jr nz, @inc_volume_loop
     jr .write_nr23
     @decrease_volume:
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR22], a ; new volume
+    ldh [<hShadowNR22], a ; new volume
     sub a, c ; new volume - old volume
     add a, 16
     ld b, a ; number of increments
     ld a, $8
     @dec_volume_loop:
-    ld [rNR22], a
+    ldh [<rNR22], a
     dec b
     jr nz, @dec_volume_loop
     .write_nr23:
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 1, a
     jr z, @not_muted
     ld a, $ff
-    ld [rNR23], a
+    ldh [<rNR23], a
     ld a, $7f
-    ld [rNR24], a
+    ldh [<rNR24], a
     jr @update_square_duty
     @not_muted:
     ; NR23
     ld hl, wTracks + Track.PeriodLo + _sizeof_Track
-    ld a, [hl] ; PeriodLo
-    inc l
-    ld [rNR23], a
+    ld a, [hli] ; PeriodLo
+    ldh [<rNR23], a
     ; NR24
-    ld a, [hl] ; PeriodHi
-    dec l
+    ld a, [hl-] ; PeriodHi
     dec l ; PeriodIndex
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, @no_trigger
     or a, $80
     res 7, [hl] ; PeriodIndex - reset trigger flag
     @no_trigger:
-    ld [rNR24], a
+    ldh [<rNR24], a
 
     @update_square_duty:
     ld hl, wTracks + Track.Square_DutyCtrl + _sizeof_Track
@@ -1365,10 +1314,8 @@ RenderChannel4:
     ; NR42
     ld hl, wTracks + Track.Envelope_Vol + _sizeof_Track*3
     ld a, [hl] ; Envelope_Vol
-    srl a
-    srl a
-    srl a
-    srl a
+    swap a
+    and a, $f
     ld hl, wTracks + Track.MasterVol + _sizeof_Track*3
     or a, [hl] ; MasterVol
     ld e, a
@@ -1377,7 +1324,7 @@ RenderChannel4:
     add hl, de
     ld a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld b, a
-    ld a, [wMasterVol]
+    ldh a, [<hMasterVol]
     or a, b
     ld e, a
     ld hl, VolumeTable
@@ -1387,61 +1334,56 @@ RenderChannel4:
     bit 7, [hl] ; PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
-    ld [wShadowNR42], a
-    sla a
-    sla a
-    sla a
-    sla a ; initial channel volume in upper 4 bits
+    ldh [<hShadowNR42], a
+    swap a ; initial channel volume in upper 4 bits
     or a, $8
-    ld [rNR42], a
+    ldh [<rNR42], a
     jr .write_nr43
     .adjust_volume:
     ld b, a ; new volume
-    ld a, [wShadowNR42] ; old volume
+    ldh a, [<hShadowNR42] ; old volume
     cp a, b
     jr z, .write_nr43 ; jump if no change in volume
     jr nc, .decrease_volume ; old volume > new volume
     ; increase volume
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR42], a ; new volume
+    ldh [<hShadowNR42], a ; new volume
     sub a, c ; new volume - old volume
     ld b, a ; number of increments
     ld a, $8
     .inc_volume_loop:
-    ld [rNR42], a
+    ldh [<rNR42], a
     dec b
     jr nz, .inc_volume_loop
     jr .write_nr43
     .decrease_volume:
     ld c, a ; old volume
     ld a, b ; new volume
-    ld [wShadowNR42], a ; new volume
+    ldh [<hShadowNR42], a ; new volume
     sub a, c ; new volume - old volume
     add a, 16
     ld b, a ; number of increments
     ld a, $8
     .dec_volume_loop:
-    ld [rNR42], a
+    ldh [<rNR42], a
     dec b
     jr nz, .dec_volume_loop
     .write_nr43:
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 3, a
     jr z, .not_muted
     ld a, $ff
-    ld [rNR43], a
+    ldh [<rNR43], a
     ld a, $7f
-    ld [rNR44], a
+    ldh [<rNR44], a
     ret
     .not_muted:
     ; NR43
     ld hl, wTracks + Track.PeriodLo + _sizeof_Track*3
-    ld a, [hl] ; PeriodLo
-    inc l
+    ld a, [hli] ; PeriodLo
     ld c, a
-    ld a, [hl] ; PeriodHi
-    inc l
+    ld a, [hli] ; PeriodHi
     sla c
     rla
     sla c
@@ -1456,7 +1398,7 @@ RenderChannel4:
     jr z, .no_regular_output
     or a, 8 ; 1 = 7-bit
     .no_regular_output:
-    ld [rNR43], a
+    ldh [<rNR43], a
     ; NR44
     xor a, a
     dec l ; PeriodHi
@@ -1467,7 +1409,7 @@ RenderChannel4:
     or a, $80
     res 7, [hl] ; PeriodIndex - reset trigger flag
     .no_trigger:
-    ld [rNR44], a
+    ldh [<rNR44], a
     ret
 
 GoPatternCommand:
@@ -1619,10 +1561,10 @@ SetInstrument:
     sla a
     sla a ; each instrument is 8 bytes long
     ld c, a
-    ld a, [wInstrumentTable]
+    ldh a, [<hInstrumentTable]
     add a, c
     ld e, a
-    ld a, [wInstrumentTable+1]
+    ldh a, [<hInstrumentTable+1]
     adc a, 0
     ld d, a
     ld a, l
@@ -1630,8 +1572,7 @@ SetInstrument:
     ld l, a
     ld a, [de] ; 0 - envelope lo
     inc de
-    ld [hl], a ; Envelope_Ptr (lo)
-    inc l
+    ld [hli], a ; Envelope_Ptr (lo)
     ld a, [de] ; 1 - envelope hi
     inc de
     ld [hl], a ; Envelope_Ptr (hi)
@@ -1641,8 +1582,7 @@ SetInstrument:
     inc de ; 2 - unused
     ld a, [de] ; 3 - effect kind
     inc de
-    ld [hl], a ; Effect_Kind
-    inc l
+    ld [hli], a ; Effect_Kind
     ld a, [de] ; 4 - effect param
     inc de
     ld [hl], a ; Effect_Param
@@ -1703,8 +1643,7 @@ EffectTick:
     ld l, a
     ld a, [hl] ; PeriodLo
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     jr nc, .slide_skip_inc
     inc [hl] ; PeriodHi
     .slide_skip_inc:
@@ -1722,8 +1661,7 @@ EffectTick:
     ld l, a
     ld a, [hl] ; PeriodLo
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     jr nc, .slide_skip_dec
     dec [hl] ; PeriodHi
     .slide_skip_dec:
@@ -1733,19 +1671,15 @@ EffectTick:
     .portamento_tick:
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [hli] ; Effect_Param
     ld c, a
-    ld a, [hl] ; Effect_Portamento_Ctrl
-    inc l
+    ld a, [hli] ; Effect_Portamento_Ctrl
     bit 7, a
     jr z, .portamento_exit
     srl a ; CF = direction (0=down, 1=up)
-    ld a, [hl] ; Effect_Portamento_TargetPeriodLo
-    inc l
+    ld a, [hli] ; Effect_Portamento_TargetPeriodLo
     ld e, a ; save target period lo
-    ld a, [hl] ; Effect_Portamento_TargetPeriodHi
-    inc l
+    ld a, [hli] ; Effect_Portamento_TargetPeriodHi
     ld d, a
     inc l ; PeriodIndex
     inc l ; PeriodLo
@@ -1753,12 +1687,10 @@ EffectTick:
     jr nc, .portamento_down
     ; slide up (add delta to current period value)
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     ld a, [hl] ; PeriodHi
     adc a, 0
-    ld [hl], a ; PeriodHi
-    dec l
+    ld [hl-], a ; PeriodHi
     ld c, a ; save periodhi
     ; check if target period has been reached (current period >= target period)
     ld a, [hl] ; PeriodLo
@@ -1772,12 +1704,10 @@ EffectTick:
     .portamento_down:
     ; slide down (subtract delta from current period value)
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     ld a, [hl] ; PeriodHi
     sbc a, 0
-    ld [hl], a ; PeriodHi
-    dec l
+    ld [hl-], a ; PeriodHi
     ld c, a ; save periodhi
     ; check if target period has been reached (current period <= target period)
     ld a, [hl] ; PeriodLo
@@ -1788,16 +1718,14 @@ EffectTick:
     .portamento_done:
     ; set final period
     ld a, e
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     ld a, d
     ld [hl], a ; PeriodHi
     ; halt
     pop hl ; Effect_Param
     inc l ; Effect_Portamento_Ctrl
     xor a, a
-    ld [hl], a ; Effect_Portamento_Ctrl
-    dec l
+    ld [hl-], a ; Effect_Portamento_Ctrl
     ret
 
     .vibrato_tick:
@@ -1807,23 +1735,20 @@ EffectTick:
     ld a, l
     add a, Track.PeriodIndex - Track.Effect_Param
     ld l, a
-    ld a, [hl] ; PeriodIndex
-    inc l
+    ld a, [hli] ; PeriodIndex
     add a, a ; note * 2
     add a, <PeriodTable
     ld e, a
     ld d, >PeriodTable
     ld a, [de]
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     inc de
     ld a, [de]
     ld [hl], a ; PeriodHi
     pop hl ; Effect_Param
     inc l ; Effect_Pos
     ; get sine value
-    ld a, [hl] ; Effect_Pos
-    dec l
+    ld a, [hl-] ; Effect_Pos
     and a, $1f
     ld de, VibratoTable
     add a, e
@@ -1831,8 +1756,7 @@ EffectTick:
     ld a, [de] ; sine value
     ld c, a
     ; *** convert sine value to real delta freq, according to vibrato depth ***
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [hli] ; Effect_Param
     and a, $0f ; VibratoDepth in lower 4 bits
     ld e, a
     ld d, 0
@@ -1860,8 +1784,7 @@ EffectTick:
     ld l, a
     ld a, [hl] ; PeriodLo
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     jr nc, .vib_done
     dec [hl] ; PeriodHi
     jr .vib_done
@@ -1872,32 +1795,25 @@ EffectTick:
     ld l, a
     ld a, [hl] ; PeriodLo
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     jr nc, .vib_done
     inc [hl] ; PeriodHi
     .vib_done:
     ; increment pos
     pop hl ; Effect_Pos
-    ld a, [hl] ; Effect_Pos
-    dec l
+    ld a, [hl-] ; Effect_Pos
     ld c, a
-    ld a, [hl] ; Effect_Param
-    inc l
-    srl a
-    srl a
-    srl a
-    srl a ; vibrato speed
+    ld a, [hli] ; Effect_Param
+    swap a
+    and a, $f ; vibrato speed
     add a, c
-    ld [hl], a ; Effect_Pos
-    dec l
+    ld [hl-], a ; Effect_Pos
     ret
 
     .arpeggio_tick:
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [hli] ; Effect_Param
     ld c, a
     ld a, [hl] ; Effect_Pos
     ld d, a
@@ -1906,8 +1822,7 @@ EffectTick:
     jr c, .skip
     xor a, a
     .skip:
-    ld [hl], a ; Effect_Pos
-    inc l
+    ld [hli], a ; Effect_Pos
     inc l ; Effect_VibratoCounter
     inc l ; Effect_MasterVol
     inc l ; PeriodIndex
@@ -1923,10 +1838,8 @@ EffectTick:
     jr .set_period
     .use_mid_note:
     ld a, c
-    srl a
-    srl a
-    srl a
-    srl a
+    swap a
+    and $0f
     .set_period:
     add a, [hl] ; PeriodIndex
     inc l
@@ -1935,8 +1848,7 @@ EffectTick:
     ld e, a
     ld d, >PeriodTable
     ld a, [de]
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [hli], a ; PeriodLo
     inc de
     ld a, [de]
     ld [hl], a ; PeriodHi
@@ -1949,9 +1861,10 @@ EffectTick:
     cp a, $10
     jr c, @sub_volume
     ; add to volume
-    srl a
-    srl a
-    and a, $3c ; delta * 4
+    swap a
+    and a, $f
+    sla a
+    sla a ; delta * 4
     ld c, a
     push hl ; Effect_Param
     ld de, Track.MasterVol - Track.Effect_Param
@@ -1984,14 +1897,12 @@ EffectTick:
 
     .cut_tick:
     pop hl ; Effect_Param
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [hli] ; Effect_Param
     ld c, a
     ld a, [hl] ; Effect_Pos
     cp a, c
     inc a
-    ld [hl], a ; Effect_Pos
-    dec l
+    ld [hl-], a ; Effect_Pos
     ret c
     ; cut! (set volume to 0)
     push hl ; Effect_Param
@@ -2023,11 +1934,9 @@ EnvelopeTick:
     push hl ; Envelope_Phase
     srl [hl] ; Envelope_Phase = $40
     inc l ; Envelope_Ptr (lo)
-    ld a, [hl] ; Envelope_Ptr (lo)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (lo)
     ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (hi)
     ld d, a
     xor a, a
     ld [hl], a ; Envelope_Pos = 0
@@ -2037,8 +1946,7 @@ EnvelopeTick:
     inc de
     inc [hl] ; Envelope_Pos
     inc l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol
-    inc l
+    ld [hli], a ; Envelope_Vol
     .point_init:
     ; HL = Envelope_Step
     ld a, [de] ; fetch envelope byte
@@ -2046,12 +1954,10 @@ EnvelopeTick:
     cp a, $ff ; end of envelope reached?
     jr z, .env_end
     ; point OK, set 3-tuple (step, dest, hold)
-    ld [hl], a ; Envelope_Step
-    inc l
+    ld [hli], a ; Envelope_Step
     ld a, [de]
     inc de
-    ld [hl], a ; Envelope_Dest
-    inc l
+    ld [hli], a ; Envelope_Dest
     ld a, [de]
     inc de
     ld [hl], a ; Envelope_Hold
@@ -2072,15 +1978,12 @@ EnvelopeTick:
     ld a, l
     sub a, Track.Envelope_Step - Track.Envelope_Ptr
     ld l, a
-    ld a, [hl] ; Envelope_Ptr (lo)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (lo)
     ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (hi)
     ld d, a
     ld a, c
-    ld [hl], a ; Envelope_Pos
-    inc l
+    ld [hli], a ; Envelope_Pos
     inc l ; Envelope_Step
     add a, e
     ld e, a
@@ -2115,11 +2018,9 @@ EnvelopeTick:
     ld a, l
     add a, Track.Envelope_Vol - Track.Envelope_Phase
     ld l, a
-    ld a, [hl] ; Envelope_Vol
-    inc l
+    ld a, [hli] ; Envelope_Vol
     push af ; save vol
-    ld a, [hl] ; Envelope_Step
-    inc l
+    ld a, [hli] ; Envelope_Step
     ld c, a ; save step
     pop af ; vol
     cp a, [hl] ; Envelope_Dest > Vol?
@@ -2148,11 +2049,9 @@ EnvelopeTick:
     pop hl ; Envelope_Phase
     ret
     .reached_dest:
-    ld a, [hl] ; Envelope_Dest
-    dec l
+    ld a, [hl-] ; Envelope_Dest
     dec l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol = dest
-    inc l
+    ld [hli], a ; Envelope_Vol = dest
     inc l ; Envelope_Dest
     inc l ; Envelope_Hold
     ld a, [hl] ; Envelope_Hold
@@ -2166,14 +2065,11 @@ EnvelopeTick:
     ld a, l ; Envelope_Hold
     sub a, Track.Envelope_Hold - Track.Envelope_Ptr
     ld l, a
-    ld a, [hl] ; Envelope_Ptr (lo)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (lo)
     ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
-    inc l
+    ld a, [hli] ; Envelope_Ptr (hi)
     ld d, a
-    ld a, [hl] ; Envelope_Pos
-    inc l
+    ld a, [hli] ; Envelope_Pos
     add a, e
     ld e, a
     jr nc, .skip_inc
@@ -2247,8 +2143,7 @@ Genesis:
 	ld bc, BGTilesEnd - BGTiles
         .copyBgTiles:
 	ld a, [de]
-	ld [hl], a
-    inc hl
+	ld [hli], a
 	inc de
 	dec bc
 	ld a, b
@@ -2257,26 +2152,25 @@ Genesis:
 
     ; copy bg palette data
     ld a, BCPSF_AUTOINC | 0
-    ld [rBCPS], a
+    ldh [<rBCPS], a
     ld hl, BGPalettes
     ld c, BGPalettesEnd - BGPalettes
     .copyBgPalettes:
-    ld a, [hl]
-    inc hl
-    ld [rBCPD], a
+    ld a, [hli]
+    ldh [<rBCPD], a
     dec c
     jr nz, .copyBgPalettes
 
     ld a, 0
-    ld [rVBK], a ; select bank 0
+    ldh [<rVBK], a ; select bank 0
     ld hl, HelloGameBoyTileMapData
     call WriteVramStrings
-    ld a, [rSVBK]
+    ldh a, [<rSVBK]
     cp a, $ff ; are we on DMG or CGB?
     jr z, .loadDMGTileMap
     ; load CGB attributes
     ld a, 1
-    ld [rVBK], a ; select bank 1
+    ldh [<rVBK], a ; select bank 1
     ld hl, HelloGameBoyTileMapAttributeData
     call WriteVramStrings
     jr .doneLoadingTileMap
@@ -2292,18 +2186,18 @@ Genesis:
     ld hl, song_song
     call StartSong
     ld a, $0
-    ld [wSoundStatus], a ; unmute all channels
+    ldh [<hSoundStatus], a ; unmute all channels
 
     ld a, $80
-    ld [rAUD3ENA], a ; DAC on
+    ldh [<rAUD3ENA], a ; DAC on
 
 ; enable interrupts now
 	ld   a, IEF_VBLANK
-	ld  [rIE], a
+	ldh  [<rIE], a
 
 	; Turn the LCD on
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG9800
-	ld [rLCDC], a
+	ldh [<rLCDC], a
 
 Done:
     halt
@@ -2311,7 +2205,7 @@ Done:
 
 ; Program main function, called each frame in NMI handler
 GoMainFunction:
-    ld a, [wMainState]
+    ldh a, [<hMainState]
     rst JumpTable
 .dw MainFunc0
 
@@ -2319,9 +2213,9 @@ MainFunc0:
     call HideAllSprites
     call DrawChannelIndicators
     ; check if channels should be (un)muted
-    ld  a, [wButtonsPressed]
+    ldh  a, [<hButtonsPressed]
     ld b, a
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit PADB_UP, b
     jr z, .upNotPressed
     ; toggle channel 1
@@ -2342,7 +2236,7 @@ MainFunc0:
     ; toggle channel 4
     xor a, 8
     .rightNotPressed:
-    ld [wSoundStatus], a
+    ldh [<hSoundStatus], a
     ret
 
 DrawChannelIndicators:
@@ -2352,127 +2246,108 @@ DrawChannelIndicators:
     call BeginVramString
 
     ; channel 1
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 0, a
     jr z, .channel1_not_muted_top
     ld a, 0
     jr .draw_channel1_top
     .channel1_not_muted_top:
-    ld a, [wShadowNR12]
+    ldh a, [<hShadowNR12]
     and a, $0e
     .draw_channel1_top:
     or a, a
     jr z, .draw_channel1_blank_top
     sla a ; ball size (0..7) * 4
     add a, $36
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel1_channel2_separator_top
     .draw_channel1_blank_top:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel1_channel2_separator_top:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 2
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 1, a
     jr z, .channel2_not_muted_top
     ld a, 0
     jr .draw_channel2_top
     .channel2_not_muted_top:
-    ld a, [wShadowNR22]
+    ldh a, [<hShadowNR22]
     and a, $0e
     .draw_channel2_top:
     or a, a
     jr z, .draw_channel2_blank_top
     sla a ; ball size (0..7) * 4
     add a, $36
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel2_channel3_separator_top
     .draw_channel2_blank_top:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel2_channel3_separator_top:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 3
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 2, a
     jr z, .channel3_not_muted_top
     ld a, 0
     jr .draw_channel3_top
     .channel3_not_muted_top:
-    ld a, [wShadowNR32]
+    ldh a, [<hShadowNR32]
     and a, $0e
     .draw_channel3_top:
     or a, a
     jr z, .draw_channel3_blank_top
     sla a ; ball size (0..7) * 4
     add a, $36
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel3_channel4_separator_top
     .draw_channel3_blank_top:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel3_channel4_separator_top:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 4
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 3, a
     jr z, .channel4_not_muted_top
     ld a, 0
     jr .draw_channel4_top
     .channel4_not_muted_top:
-    ld a, [wShadowNR42]
+    ldh a, [<hShadowNR42]
     and a, $0e
     .draw_channel4_top:
     or a, a
     jr z, .draw_channel4_blank_top
     sla a ; ball size (0..7) * 4
     add a, $36
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .top_half_done
     .draw_channel4_blank_top:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .top_half_done:
     call EndVramString
 
@@ -2482,127 +2357,108 @@ DrawChannelIndicators:
     call BeginVramString
 
     ; channel 1
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 0, a
     jr z, .channel1_not_muted_bottom
     ld a, 0
     jr .draw_channel1_bottom
     .channel1_not_muted_bottom:
-    ld a, [wShadowNR12]
+    ldh a, [<hShadowNR12]
     and a, $0e
     .draw_channel1_bottom:
     or a, a
     jr z, .draw_channel1_blank_bottom
     sla a ; ball size (0..7) * 4
     add a, $37
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel1_channel2_separator_bottom
     .draw_channel1_blank_bottom:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel1_channel2_separator_bottom:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 2
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 1, a
     jr z, .channel2_not_muted_bottom
     ld a, 0
     jr .draw_channel2_bottom
     .channel2_not_muted_bottom:
-    ld a, [wShadowNR22]
+    ldh a, [<hShadowNR22]
     and a, $0e
     .draw_channel2_bottom:
     or a, a
     jr z, .draw_channel2_blank_bottom
     sla a ; ball size (0..7) * 4
     add a, $37
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel2_channel3_separator_bottom
     .draw_channel2_blank_bottom:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel2_channel3_separator_bottom:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 3
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 2, a
     jr z, .channel3_not_muted_bottom
     ld a, 0
     jr .draw_channel3_bottom
     .channel3_not_muted_bottom:
-    ld a, [wShadowNR32]
+    ldh a, [<hShadowNR32]
     and a, $0e
     .draw_channel3_bottom:
     or a, a
     jr z, .draw_channel3_blank_bottom
     sla a ; ball size (0..7) * 4
     add a, $37
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .draw_channel3_channel4_separator_bottom
     .draw_channel3_blank_bottom:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .draw_channel3_channel4_separator_bottom:
     ; space
     ld a, 0
-    ld [hl], a
-    inc l
+    ld [hli], a
 
     ; channel 4
-    ld a, [wSoundStatus]
+    ldh a, [<hSoundStatus]
     bit 3, a
     jr z, .channel4_not_muted_bottom
     ld a, 0
     jr .draw_channel4_bottom
     .channel4_not_muted_bottom:
-    ld a, [wShadowNR42]
+    ldh a, [<hShadowNR42]
     and a, $0e
     .draw_channel4_bottom:
     or a, a
     jr z, .draw_channel4_blank_bottom
     sla a ; ball size (0..7) * 4
     add a, $37
-    ld [hl], a
-    inc l
+    ld [hli], a
     add a, 2
-    ld [hl], a
-    inc l
+    ld [hli], a
     jr .bottom_half_done
     .draw_channel4_blank_bottom:
     ; space
-    ld [hl], a
-    inc l
-    ld [hl], a
-    inc l
+    ld [hli], a
+    ld [hli], a
     .bottom_half_done:
     jp EndVramString
 
