@@ -1,0 +1,4 @@
+[objects]
+main.o
+[ramsections]
+bank 0 slot $c000 orga $c000 Ram_c000
