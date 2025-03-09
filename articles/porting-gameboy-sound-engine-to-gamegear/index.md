@@ -21,6 +21,8 @@ and make it sound good on Game Gear.
 The resulting source code can be found [here](https://github.com/khansen/gbdev/tree/master/music/live-and-learn-gg).
 You will need [WLA DX](https://github.com/vhelin/wla-dx) to build it.
 
+You can find a recording of the final result here: https://www.youtube.com/watch?v=rq-iBr5dsn8
+
 ## Game Boy versus Game Gear hardware
 
 ### Game Gear versus Sega Master System
