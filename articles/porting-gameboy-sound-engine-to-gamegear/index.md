@@ -397,7 +397,12 @@ when using `LDH`. Combined with the fewer clock cycles spent in `LDH` versus
 ### Step 3: Porting the sound engine to Game Gear
 
 Finally, we are ready to port the sound engine. This amounts to implementing
-the `RenderChannelX` subroutines. You can find the code [here](https://github.com/khansen/gbdev/tree/master/music/live-and-learn-gg).
+the `RenderChannelX` subroutines. You can find the code
+[here](https://github.com/khansen/gbdev/blob/master/music/live-and-learn-gg/main.s#L844).
+- The waveform is retriggered (channel is turned off and then on again) if a
+new note was triggered on the channel.
+- The channel volume level is converted to a 4-bit attenuation value.
+- The period value is converted to a pair of 4-bit and 6-bit values.
 
 As mentioned earlier, Game Gear and SMS have very similar hardware. This means
 that most SMS documentation, tools, and code are also applicable to Game Gear
