@@ -1,5 +1,6 @@
 def hz_to_gg_period(hz)
-  3579545 / (32 * hz)
+#  3579545 / (32 * hz)
+  0x7ff - (3579545 / (16 * hz)).floor()
 end
 
 octaves_in_hz = [
@@ -16,5 +17,6 @@ octaves_in_hz = [
 ]
 puts "PeriodTable:"
 octaves_in_hz.each do |octave|
+#	puts ".dw %s" % (octave.map{|hz| hz_to_gg_period(hz)}).map{|period| "$%03x" % (0x3ff - (period/2))}.join(',')
 	puts ".dw %s" % (octave.map{|hz| hz_to_gg_period(hz)}).map{|period| "$%03x" % period}.join(',')
 end
