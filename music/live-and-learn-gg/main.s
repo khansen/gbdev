@@ -270,13 +270,11 @@ WriteVramStrings:
     or a, a
     ret z
     ld d, a ; high address
-    ld a, [hl]
+    ld e, [hl] ; low address
     inc hl
-    ld e, a ; low address
     call SetVramAddress
-    ld a, [hl]
+    ld b, [hl] ; count
     inc hl
-    ld b, a
     @loop:
     ld a, [hl]
     inc hl
@@ -295,15 +293,12 @@ BeginVramString:
     ld b, 0
     ld c, a
     add hl, bc
-    ld a, d
-    ld [hl], a ; high address
+    ld [hl], d ; high address
     inc l
-    ld a, e
-    ld [hl], a ; low address
+    ld [hl], e ; low address
     inc l
     pop bc
-    ld a, c
-    ld [hl], a ; count
+    ld [hl], c ; count
     inc l
     ret
 
@@ -418,7 +413,7 @@ StartSong:
     ; sla a
     ; sla a
     @skip:
-    ld c, a
+    ld c, a ; speed
     inc e ; Effect_Kind
     xor a, a
     ld [de], a ; Effect_Kind
@@ -434,10 +429,10 @@ StartSong:
     ld [de], a ; Pattern_RowCount
     dec e ; Tick
     ld a, c ; speed
-    dec a
+    dec a ; speed - 1
     ld [de], a ; Tick
     dec e ; Speed
-    inc a
+    inc a ; speed
     ld [de], a ; Speed
     ld a, e
     add a, Track.MasterVol - Track.Speed
@@ -537,8 +532,7 @@ UpdateSound:
     inc l ; Pattern_Ptr (hi)
     inc l ; Order_Pos
     @pre_order_loop:
-    ld a, [hl] ; Order_Pos
-    ld c, a
+    ld c, [hl] ; Order_Pos
     ld a, [orderTable]
     add a, c
     ld e, a
@@ -596,12 +590,10 @@ UpdateSound:
     jr nz, @check_row_status
     ; prepare to fetch row status
     inc l ; Pattern_Ptr (lo)
-    ld a, [hl] ; Pattern_Ptr (lo)
+    ld e, [hl] ; Pattern_Ptr (lo)
     inc l
-    ld e, a
-    ld a, [hl] ; Pattern_Ptr (hi)
+    ld d, [hl] ; Pattern_Ptr (hi)
     dec l
-    ld d, a
     dec l ; Pattern_RowStatus
     @fetch_row_status:
     ; HL = Pattern_RowStatus
@@ -627,12 +619,10 @@ UpdateSound:
     and a, 7
     jr z, @pattern_fetch_loop
     ; for rows not multiple of 8, DE does not yet contain pattern data ptr because we didn't fetch row status byte
-    ld a, [hl] ; Pattern_Ptr (lo)
+    ld e, [hl] ; Pattern_Ptr (lo)
     inc l
-    ld e, a
-    ld a, [hl] ; Pattern_Ptr (hi)
+    ld d, [hl] ; Pattern_Ptr (hi)
     dec l
-    ld d, a
     @pattern_fetch_loop:
     ; HL = Pattern_Ptr (lo)
     ; DE = pattern data ptr
@@ -707,9 +697,8 @@ UpdateSound:
     inc l ; Pattern_Ptr (hi)
     inc l ; Order_Pos
     inc l ; Effect_Kind
-    ld a, [hl] ; Effect_Kind
+    ld d, [hl] ; Effect_Kind
     inc l
-    ld d, a
     inc l ; skip Effect_Param
     ; clear effect state
     xor a, a
@@ -745,16 +734,14 @@ UpdateSound:
     ld e, a
     ld d, 0
     add hl, de
-    ld a, [hl] ; period lo
+    ld d, [hl] ; period lo
     inc l
-    ld d, a
     ld a, [hl] ; period hi
     pop hl ; Square_DutyCtrl
     dec l ; PeriodHi
     ld [hl], a ; PeriodHi
     dec l
-    ld a, d
-    ld [hl], a ; PeriodLo
+    ld [hl], d ; PeriodLo
     dec l
     ld a, c
     or a, $80 ; trigger channel
@@ -790,20 +777,17 @@ UpdateSound:
     ld e, a
     ld d, 0
     add hl, de
-    ld a, [hl] ; period lo
+    ld d, [hl] ; period lo
     inc l
-    ld d, a
     ld a, [hl] ; period hi
     pop hl ; PeriodIndex
     dec l ; MasterVol
     dec l ; Effect_Portamento_TargetPeriodHi
     ld [hl], a ; Effect_Portamento_TargetPeriodHi
     dec l
-    ld a, d
-    ld [hl], a ; Effect_Portamento_TargetPeriodLo
+    ld [hl], d ; Effect_Portamento_TargetPeriodLo
     dec l
-    ld a, c
-    ld [hl], a ; Effect_Portamento_Ctrl
+    ld [hl], c ; Effect_Portamento_Ctrl
     pop hl ; Pattern_Ptr (lo)
     dec l ; Pattern_RowStatus
     @mixer_tick:
@@ -867,10 +851,8 @@ RenderChannel1:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
     ld a, [masterVol]
-    or a, b
+    or a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld e, a
     ld hl, VolumeTable
     add hl, de
@@ -933,10 +915,8 @@ RenderChannel3:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
     ld a, [masterVol]
-    or a, b
+    or a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld e, a
     ld hl, VolumeTable
     add hl, de
@@ -999,10 +979,8 @@ RenderChannel2:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
     ld a, [masterVol]
-    or a, b
+    or a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld e, a
     ld hl, VolumeTable
     add hl, de
@@ -1065,10 +1043,8 @@ RenderChannel4:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
     ld a, [masterVol]
-    or a, b
+    or a, [hl] ; envelope volume scaled according to track volume (0..F)
     ld e, a
     ld hl, VolumeTable
     add hl, de
@@ -1090,7 +1066,7 @@ RenderChannel4:
     dec a
     @no_clamp:
     set 2, a ; white noise is default
-    inc hl ; Square_DutyCtrl
+    inc l ; Square_DutyCtrl
     bit 7, [hl] ; Square_DutyCtrl (LFSR width)
     jr z, @no_regular_output
     res 2, a ; synchronous noise
@@ -1233,12 +1209,10 @@ SetSpeed:
     ld hl, tracks + Track.Speed
     ld de, _sizeof_Track
     ld [hl], a ; Speed
+    .rept NUM_TRACKS - 1
     add hl, de
     ld [hl], a ; Speed
-    add hl, de
-    ld [hl], a ; Speed
-    add hl, de
-    ld [hl], a ; Speed
+    .endr
     pop hl ; Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ret
@@ -1266,8 +1240,7 @@ EffectTick:
 ; slide up by subtracting slide amount from period value
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
-    ld c, a
+    ld c, [hl] ; Effect_Param
     ld a, l ; Effect_Param
     add a, Track.PeriodLo - Track.Effect_Param
     ld l, a
@@ -1294,8 +1267,7 @@ EffectTick:
 ; slide down by adding slide amount to period value
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
-    ld c, a
+    ld c, [hl] ; Effect_Param
     ld a, l ; Effect_Param
     add a, Track.PeriodLo - Track.Effect_Param
     ld l, a
@@ -1321,20 +1293,17 @@ EffectTick:
     .portamento_tick:
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
+    ld c, [hl] ; Effect_Param
     inc l
-    ld c, a
     ld a, [hl] ; Effect_Portamento_Ctrl
     inc l
     bit 7, a
     jr z, .portamento_exit
     srl a ; CF = direction (0=down, 1=up)
-    ld a, [hl] ; Effect_Portamento_TargetPeriodLo
+    ld e, [hl] ; Effect_Portamento_TargetPeriodLo
     inc l
-    ld e, a ; save target period lo
-    ld a, [hl] ; Effect_Portamento_TargetPeriodHi
+    ld d, [hl] ; Effect_Portamento_TargetPeriodHi
     inc l
-    ld d, a
     inc l ; PeriodIndex
     inc l ; PeriodLo
     ld a, [hl] ; PeriodLo
@@ -1357,11 +1326,9 @@ EffectTick:
     jr nc, .portamento_exit
     .portamento_done:
     ; set final period
-    ld a, e
-    ld [hl], a ; PeriodLo
+    ld [hl], e ; PeriodLo
     inc l
-    ld a, d
-    ld [hl], a ; PeriodHi
+    ld [hl], d ; PeriodHi
     ; halt
     pop hl ; Effect_Param
     inc l ; Effect_Portamento_Ctrl
@@ -1485,9 +1452,8 @@ EffectTick:
     .arpeggio_tick:
     pop hl ; Effect_Param
     push hl
-    ld a, [hl] ; Effect_Param
+    ld c, [hl] ; Effect_Param
     inc l
-    ld c, a
     ld a, [hl] ; Effect_Pos
     ld d, a
     inc a
@@ -1573,9 +1539,8 @@ EffectTick:
 
     .cut_tick:
     pop hl ; Effect_Param
-    ld a, [hl] ; Effect_Param
+    ld c, [hl] ; Effect_Param
     inc l
-    ld c, a
     ld a, [hl] ; Effect_Pos
     cp a, c
     inc a
@@ -1612,12 +1577,10 @@ EnvelopeTick:
     push hl ; Envelope_Phase
     srl [hl] ; Envelope_Phase = $40
     inc l ; Envelope_Ptr (lo)
-    ld a, [hl] ; Envelope_Ptr (lo)
+    ld e, [hl] ; Envelope_Ptr (lo)
     inc l
-    ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
+    ld d, [hl] ; Envelope_Ptr (hi)
     inc l
-    ld d, a
     xor a, a
     ld [hl], a ; Envelope_Pos = 0
     .init_vol:
@@ -1661,12 +1624,10 @@ EnvelopeTick:
     ld a, l
     sub a, Track.Envelope_Step - Track.Envelope_Ptr
     ld l, a
-    ld a, [hl] ; Envelope_Ptr (lo)
+    ld e, [hl] ; Envelope_Ptr (lo)
     inc l
-    ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
+    ld d, [hl] ; Envelope_Ptr (hi)
     inc l
-    ld d, a
     ld a, c
     ld [hl], a ; Envelope_Pos
     inc l
@@ -1707,9 +1668,8 @@ EnvelopeTick:
     ld a, [hl] ; Envelope_Vol
     inc l
     push af ; save vol
-    ld a, [hl] ; Envelope_Step
+    ld c, [hl] ; Envelope_Step
     inc l
-    ld c, a ; save step
     pop af ; vol
     cp a, [hl] ; Envelope_Dest > Vol?
     jr nc, .sub_volume
@@ -1755,12 +1715,10 @@ EnvelopeTick:
     ld a, l ; Envelope_Hold
     sub a, Track.Envelope_Hold - Track.Envelope_Ptr
     ld l, a
-    ld a, [hl] ; Envelope_Ptr (lo)
+    ld e, [hl] ; Envelope_Ptr (lo)
     inc l
-    ld e, a
-    ld a, [hl] ; Envelope_Ptr (hi)
+    ld d, [hl] ; Envelope_Ptr (hi)
     inc l
-    ld d, a
     ld a, [hl] ; Envelope_Pos
     inc l
     add a, e
