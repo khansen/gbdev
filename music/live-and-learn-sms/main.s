@@ -753,12 +753,15 @@ RenderChannels:
     jp RenderFMChannels
 
 RenderPSGChannels:
-    call RenderPSGChannel1
-    call RenderPSGChannel2
-    call RenderPSGChannel3
-    jp RenderPSGChannel4
+    call RenderPSGToneChannels
+    jp RenderPSGNoiseChannel
 
-RenderPSGChannel1:
+RenderPSGToneChannels:
+    call RenderPSGToneChannel1
+    call RenderPSGToneChannel2
+    jp RenderPSGToneChannel3
+
+RenderPSGToneChannel1:
     ld ix, tracks
     bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
@@ -832,7 +835,7 @@ RenderPSGChannel1:
     out ($7f), a ; write upper 6 bits of period
     ret
 
-RenderPSGChannel3:
+RenderPSGToneChannel3:
     ld ix, tracks + _sizeof_Track*2
     bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
@@ -906,7 +909,7 @@ RenderPSGChannel3:
     out ($7f), a ; write upper 6 bits of period
     ret
 
-RenderPSGChannel2:
+RenderPSGToneChannel2:
     ld ix, tracks + _sizeof_Track
     bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
@@ -980,7 +983,7 @@ RenderPSGChannel2:
     out ($7f), a ; write upper 6 bits of period
     ret
 
-RenderPSGChannel4:
+RenderPSGNoiseChannel:
     ld ix, tracks + _sizeof_Track*3
     bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
