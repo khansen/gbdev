@@ -493,41 +493,30 @@ StartSong:
 
 UpdateSound:
     ld b, 0 ; track index
-    ld hl, tracks; + SIZEOF
+    ld ix, tracks; + SIZEOF
     @loop:
-    ld a, [hl] ; Speed
+    ld a, [ix + Track.Speed]
     cp a, $ff   ; is track used?
     jr nz, @process_track
     ld de, _sizeof_Track
-    add hl, de
+    add ix, de
     jp @next_track
     @process_track:
-    inc l ; Tick
-    inc [hl]    ; Tick
-    cp a, [hl]  ; speed == tick?
+    inc [ix + Track.Tick]
+    cp a, [ix + Track.Tick] ; speed == tick?
     jr z, @next_row
-    inc l ; Pattern_RowCount
-    inc l ; Pattern_Row
-    inc l ; Pattern_RowStatus
     jp @mixer_tick
     @next_row:
     xor a, a
-    ld [hl], a ; Tick
-    inc l ; Pattern_RowCount
-    ld a, [hl] ; Pattern_RowCount
-    inc l ; Pattern_Row
-    inc [hl]    ; Pattern_Row
-    cp a, [hl]  ; rowCount == row?
+    ld [ix + Track.Tick], a
+    ld a, [ix + Track.Pattern_RowCount]
+    inc [ix + Track.Pattern_Row]
+    cp a, [ix + Track.Pattern_Row]  ; rowCount == row?
     jr z, @end_of_pattern
     jr @no_new_pattern
     @end_of_pattern:
-    push hl ; Pattern_Row
     xor a, a
-    ld [hl], a ; Pattern_Row = 0
-    inc l ; Pattern_RowStatus
-    inc l ; Pattern_Ptr (lo)
-    inc l ; Pattern_Ptr (hi)
-    inc l ; Order_Pos
+    ld [ix + Track.Pattern_Row], a ; Pattern_Row = 0
     @pre_order_loop:
     ld de, [trackHeaderTable]
     ld a, b
@@ -545,7 +534,7 @@ UpdateSound:
     ld a, [de] ; order table (hi)
     ld d, a
     ld e, c
-    ld a, [hl] ; Order_Pos
+    ld a, [ix + Track.Order_Pos]
     add a, e
     ld e, a
     jr nc, @order_fetch_loop
@@ -553,7 +542,7 @@ UpdateSound:
     @order_fetch_loop:
     ld a, [de] ; order byte
     inc de
-    inc [hl] ; Order_Pos
+    inc [ix + Track.Order_Pos]
     cp a, $f0 ; $f0 > a?
     jr nc, @order_special
     ; pattern number
@@ -586,73 +575,49 @@ UpdateSound:
     inc d
     @skip_inc_d:
     ld a, [de] ; pattern ptr (lo)
-    dec l ; Pattern_Ptr (hi)
-    dec l ; Pattern_Ptr (lo)
-    ld [hl], a ; Pattern_Ptr (lo)
-    inc l ; Pattern_Ptr (hi)
+    ld [ix + Track.Pattern_Ptr], a
     inc de
     ld c, a
     ld a, [de] ; pattern ptr (hi)
-    ld [hl], a ; Pattern_Ptr (hi)
-    dec l ; Pattern_Ptr (lo)
+    ld [ix + Track.Pattern_Ptr+1], a
     ld e, c
     ld d, a
     ld a, [de] ; row count
     inc de
     call IncPatternPtr
-    pop hl ; Pattern_Row
-    dec l ; Pattern_RowCount
-    ld [hl], a ; Pattern_RowCount
-    inc l ; Pattern_Row
-    inc l ; Pattern_RowStatus
+    ld [ix + Track.Pattern_RowCount], a
     jr @fetch_row_status
     @order_special:
     ; TODO: implement order commands. Assume $fe for now
     ld a, [de] ; order byte
-    ld [hl], a ; Order_Pos
+    ld [ix + Track.Order_Pos], a
     jr @pre_order_loop
     @no_new_pattern:
-    ld a, [hl] ; Pattern_Row
-    inc l
+    ld a, [ix + Track.Pattern_Row]
     and a, 7
     jr nz, @check_row_status
     ; prepare to fetch row status
-    inc l ; Pattern_Ptr (lo)
-    ld e, [hl] ; Pattern_Ptr (lo)
-    inc l
-    ld d, [hl] ; Pattern_Ptr (hi)
-    dec l
-    dec l ; Pattern_RowStatus
+    ld e, [ix + Track.Pattern_Ptr]
+    ld d, [ix + Track.Pattern_Ptr+1]
     @fetch_row_status:
-    ; HL = Pattern_RowStatus
     ; DE = pattern data ptr
     ; fetch row status for upcoming 8 rows
     ld a, [de] ; pattern byte
     inc de
-    ld [hl], a ; Pattern_RowStatus
-    inc l ; Pattern_Ptr (lo)
+    ld [ix + Track.Pattern_RowStatus], a
     call IncPatternPtr
-    dec l ; Pattern_RowStatus
     @check_row_status:
-    ; HL = Pattern_RowStatus
-    srl [hl] ; Pattern_RowStatus
+    srl [ix + Track.Pattern_RowStatus]
     jr c, @process_pattern_data
     jp @mixer_tick
     @process_pattern_data:
-    ; HL = Pattern_RowStatus
-    dec l ; Pattern_Row
-    ld a, [hl] ; Pattern_Row
-    inc l ; Pattern_RowStatus
-    inc l ; Pattern_Ptr (lo)
+    ld a, [ix + Track.Pattern_Row]
     and a, 7
     jr z, @pattern_fetch_loop
     ; for rows not multiple of 8, DE does not yet contain pattern data ptr because we didn't fetch row status byte
-    ld e, [hl] ; Pattern_Ptr (lo)
-    inc l ; Pattern_Ptr (hi)
-    ld d, [hl] ; Pattern_Ptr (hi)
-    dec l ; Pattern_Ptr (lo)
+    ld e, [ix + Track.Pattern_Ptr]
+    ld d, [ix + Track.Pattern_Ptr+1]
     @pattern_fetch_loop:
-    ; HL = Pattern_Ptr (lo)
     ; DE = pattern data ptr
     ld a, [de] ; pattern byte
     inc de
@@ -669,26 +634,19 @@ UpdateSound:
     jr nc, @is_other_command
     ; set effect and param
     and a, $f
-    push hl ; Pattern_Ptr (lo)
     jr z, @skip_inc ; effect = 0 --> no parameter byte
     call IncPatternPtr
     @skip_inc:
-    inc l ; Pattern_Ptr (hi)
-    inc l ; Order_Pos
-    inc l ; Effect_Kind
-    ld [hl], a ; Effect_Kind
-    inc l
+    ld [ix + Track.Effect_Kind], a
     or a, a
     jr z, @skip_effect_init
     ld a, [de] ; pattern byte: effect param
     inc de
-    ld [hl], a ; Effect_Param
-    inc l
+    ld [ix + Track.Effect_Param], a
     ; clear effect state
     xor a, a
-    ld [hl], a ; Effect_Pos
+    ld [ix + Track.Effect_Pos], a
     @skip_effect_init:
-    pop hl ; Pattern_Ptr (lo)
     jr @pattern_fetch_loop
     @is_set_instrument_command:
     and a, $f ; instrument in lower 4 bits
@@ -705,57 +663,34 @@ UpdateSound:
     sla a
     sla a ; new volume in upper 4 bits
     or a, 1 ; indicates that volume was explicitly set
-    push hl ; Pattern_Ptr (lo)
-    push de
-    ld de, Track.MasterVol - Track.Pattern_Ptr
-    add hl, de
-    ld [hl], a ; MasterVol
-    pop de ; pattern data ptr
-    pop hl ; Pattern_Ptr (lo)
+    ld [ix + Track.MasterVol], a
     jr @pattern_fetch_loop
     @is_other_command:
     and a, $f
     call GoPatternCommand
     jr c, @pattern_fetch_loop
-    dec l ; Pattern_RowStatus
     jp @mixer_tick
     @is_note:
-    push hl ; Pattern_Ptr (lo)
     ld c, a ; save note
-    inc l ; Pattern_Ptr (hi)
-    inc l ; Order_Pos
-    inc l ; Effect_Kind
-    ld d, [hl] ; Effect_Kind
-    inc l ; Effect_Param
-    inc l ; Effect_Pos
+    ld d, [ix + Track.Effect_Kind]
     ; clear effect state
     xor a, a
-    ld [hl], a ; Effect_Pos
-    inc l
-    ld [hl], a ; Effect_Portamento_TargetPeriodLo
-    inc l
-    ld [hl], a ; Effect_Portamento_TargetPeriodHi
-    inc l
-    ld a, [hl] ; MasterVol
+    ld [ix + Track.Effect_Pos], a
+    ld [ix + Track.Effect_Portamento_TargetPeriodLo], a
+    ld [ix + Track.Effect_Portamento_TargetPeriodHi], a
+    ld a, [ix + Track.MasterVol]
     srl a
     jr c, @skip ; CF=1 if the volume has been overridden by a previous volume command
     ld a, $78
     @skip:
     sla a
-    ld [hl], a ; MasterVol
-    inc l ; PeriodIndex
-    inc l ; PeriodLo
-    inc l ; PeriodHi
-    inc l ; Square_DutyCtrl
-    inc l ; Envelope_Phase
+    ld [ix + Track.MasterVol], a
     ld a, ENV_RESET
-    ld [hl], a ; Envelope_Phase
-    dec l ; Square_DutyCtrl
+    ld [ix + Track.Envelope_Phase], a
     ld a, d ; effect kind
     cp a, PORTAMENTO_EFFECT
     jr z, @init_slide
     ; no slide, set new period immediately
-    push hl ; Square_DutyCtrl
     ld a, b ; track
     cp a, 4 ; < 4 means PSG
     ld hl, PSGPeriodTable
@@ -769,27 +704,17 @@ UpdateSound:
     ld d, [hl] ; period lo
     inc l
     ld a, [hl] ; period hi
-    pop hl ; Square_DutyCtrl
-    dec l ; PeriodHi
-    ld [hl], a ; PeriodHi
-    dec l ; PeriodLo
-    ld [hl], d ; PeriodLo
-    dec l ; PeriodIndex
+    ld [ix + Track.PeriodHi], a
+    ld [ix + Track.PeriodLo], d
     ld a, c
     or a, $80 ; trigger channel
-    ld [hl], a ; PeriodIndex
-    pop hl ; Pattern_Ptr (lo)
-    dec l ; Pattern_RowStatus
+    ld [ix + Track.PeriodIndex], a
     jp @mixer_tick
     @init_slide:
-    dec l ; PeriodHi
-    dec l ; PeriodLo
-    dec l ; PeriodIndex
-    ld a, [hl] ; PeriodIndex
+    ld a, [ix + Track.PeriodIndex]
     cp a, c ; CF = slide direction (0=down,1=up)
     push af ; save flags
-    ld [hl], c ; PeriodIndex
-    push hl ; PeriodIndex
+    ld [ix + Track.PeriodIndex], c
     ld a, b ; track
     cp a, 4 ; < 4 means PSG
     ld hl, PSGPeriodTable
@@ -803,34 +728,20 @@ UpdateSound:
     ld d, [hl] ; period lo
     inc l
     ld a, [hl] ; period hi
-    pop hl ; PeriodIndex
-    dec l ; MasterVol
-    dec l ; Effect_Portamento_TargetPeriodHi
-    ld [hl], a ; Effect_Portamento_TargetPeriodHi
-    dec l
-    ld [hl], d ; Effect_Portamento_TargetPeriodLo
-    dec l
+    ld [ix + Track.Effect_Portamento_TargetPeriodHi], a
+    ld [ix + Track.Effect_Portamento_TargetPeriodLo], d
     pop af ; restore flags
     ld a, $40
     rl a ; bit 7 = 1 (active), bit 0 = direction
-    ld [hl], a ; Effect_Portamento_Ctrl
-    pop hl ; Pattern_Ptr (lo)
-    dec l ; Pattern_RowStatus
+    ld [ix + Track.Effect_Portamento_Ctrl], a
     @mixer_tick:
-    ; hl points to Pattern_RowStatus
     ; update effect
-    ld de, Track.Effect_Kind - Track.Pattern_RowStatus
-    add hl, de
-    ld a, [hl] ; Effect_Kind
-    inc l ; Effect_Param
     call EffectTick
     ; update envelope
-    ld de, Track.Envelope_Phase - Track.Effect_Param
-    add hl, de ; Envelope_Phase
     call EnvelopeTick
-    ld de, _sizeof_Track - Track.Envelope_Phase
-    add hl, de ; next track
     @next_track:
+    ld de, _sizeof_Track
+    add ix, de
     inc b
     ld a, b
     cp a, MAX_TRACKS
@@ -848,32 +759,26 @@ RenderPSGChannels:
     jp RenderPSGChannel4
 
 RenderPSGChannel1:
-    ld hl, tracks + Track.PeriodIndex
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    ld ix, tracks
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $9f ; tone 1 attenuation
     out ($7f), a ; mute
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    ld hl, tracks + Track.Envelope_Vol
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld hl, tracks + Track.MasterVol
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -885,8 +790,7 @@ RenderPSGChannel1:
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
     @set_volume:
-    ld hl, tracks + Track.EffectiveVol
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld e, a
     ld hl, PSGToneAttenuationTable
     add hl, de
@@ -894,10 +798,8 @@ RenderPSGChannel1:
     or a, $90 ; tone 1 attenuation
     out ($7f), a ; write volume
 
-    ld hl, tracks + Track.PeriodLo
-    ld e, [hl] ; PeriodLo
-    inc hl ; PeriodHi
-    ld d, [hl] ; PeriodHi
+    ld e, [ix + Track.PeriodLo]
+    ld d, [ix + Track.PeriodHi]
     srl d
     rr e
     ld bc, $3ff
@@ -931,32 +833,26 @@ RenderPSGChannel1:
     ret
 
 RenderPSGChannel3:
-    ld hl, tracks + Track.PeriodIndex + _sizeof_Track*2
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    ld ix, tracks + _sizeof_Track*2
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $df ; tone 3 attenuation
     out ($7f), a ; mute
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    ld hl, tracks + Track.Envelope_Vol + _sizeof_Track*2
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld hl, tracks + Track.MasterVol + _sizeof_Track*2
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -968,8 +864,7 @@ RenderPSGChannel3:
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
     @set_volume:
-    ld hl, tracks + Track.EffectiveVol + _sizeof_Track*2
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld e, a
     ld hl, PSGToneAttenuationTable
     add hl, de
@@ -977,10 +872,8 @@ RenderPSGChannel3:
     or a, $d0 ; tone 3 attenuation
     out ($7f), a ; write volume
 
-    ld hl, tracks + Track.PeriodLo + _sizeof_Track*2
-    ld e, [hl] ; PeriodLo
-    inc hl ; PeriodHi
-    ld d, [hl] ; PeriodHi
+    ld e, [ix + Track.PeriodLo]
+    ld d, [ix + Track.PeriodHi]
     srl d
     rr e
     ld bc, $3ff
@@ -1014,32 +907,26 @@ RenderPSGChannel3:
     ret
 
 RenderPSGChannel2:
-    ld hl, tracks + Track.PeriodIndex + _sizeof_Track
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    ld ix, tracks + _sizeof_Track
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $bf ; tone 2 attenuation
     out ($7f), a ; mute
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    ld hl, tracks + Track.Envelope_Vol + _sizeof_Track
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld hl, tracks + Track.MasterVol + _sizeof_Track
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -1051,8 +938,7 @@ RenderPSGChannel2:
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
     @set_volume:
-    ld hl, tracks + Track.EffectiveVol + _sizeof_Track
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld e, a
     ld hl, PSGToneAttenuationTable
     add hl, de
@@ -1060,10 +946,8 @@ RenderPSGChannel2:
     or a, $b0 ; tone 2 attenuation
     out ($7f), a ; write volume
 
-    ld hl, tracks + Track.PeriodLo + _sizeof_Track
-    ld e, [hl] ; PeriodLo
-    inc hl ; PeriodHi
-    ld d, [hl] ; PeriodHi
+    ld e, [ix + Track.PeriodLo]
+    ld d, [ix + Track.PeriodHi]
     srl d
     rr e
     ld bc, $3ff
@@ -1097,32 +981,26 @@ RenderPSGChannel2:
     ret
 
 RenderPSGChannel4:
-    ld hl, tracks + Track.PeriodIndex + _sizeof_Track*3
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    ld ix, tracks + _sizeof_Track*3
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $ff ; noise attenuation
     out ($7f), a ; mute
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    ld hl, tracks + Track.Envelope_Vol + _sizeof_Track*3
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld hl, tracks + Track.MasterVol + _sizeof_Track*3
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -1134,8 +1012,7 @@ RenderPSGChannel4:
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
     @set_volume:
-    ld hl, tracks + Track.EffectiveVol + _sizeof_Track*3
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld e, a
     ld hl, PSGNoiseAttenuationTable
     add hl, de
@@ -1143,8 +1020,7 @@ RenderPSGChannel4:
     or a, $f0 ; noise attenuation
     out ($7f), a ; write volume
 
-    ld hl, tracks + Track.PeriodHi + _sizeof_Track*3
-    ld e, [hl] ; PeriodHi (0..7)
+    ld e, [ix + Track.PeriodHi] ; 0..7
     ld a, 7
     sub a, e
     srl a
@@ -1154,8 +1030,7 @@ RenderPSGChannel4:
     dec a
     @no_clamp:
     set 2, a ; white noise is default
-    inc l ; Square_DutyCtrl
-    bit 7, [hl] ; Square_DutyCtrl (LFSR width)
+    bit 7, [ix + Track.Square_DutyCtrl]; LFSR width
     jr z, @no_regular_output
     res 2, a ; synchronous noise
     @no_regular_output:
@@ -1176,11 +1051,11 @@ RenderFMChannels:
 
 RenderMelodicFMChannels:
     ld b, 0 ; FM channel index
-    ld hl, tracks + (4 * _sizeof_Track) ; skip PSG tracks
+    ld ix, tracks + (4 * _sizeof_Track) ; skip PSG tracks
     @loop:
     call RenderMelodicFMChannel
     ld de, _sizeof_Track
-    add hl, de ; next track
+    add ix, de ; next track
     inc b
     ld a, b
     cp a, 6 ; number of melodic channels
@@ -1189,15 +1064,15 @@ RenderMelodicFMChannels:
 
 RenderRhythmFMChannels:
     ld b, 6 ; FM channel index
-    ld hl, tracks + ((4 + 6) * _sizeof_Track) ; skip PSG tracks and melodic FM tracks
+    ld ix, tracks + ((4 + 6) * _sizeof_Track) ; skip PSG tracks and melodic FM tracks
     @loop:
-    ld a, [hl] ; Speed
+    ld a, [ix + Track.Speed]
     cp a, $ff ; is track used?
     jr z, @skip
     call RenderRhythmFMChannel
     @skip:
     ld de, _sizeof_Track
-    add hl, de ; next track
+    add ix, de ; next track
     inc b
     ld a, b
     cp a, 9
@@ -1218,25 +1093,20 @@ RenderRhythmFMChannels:
     out ($f1), a
     ret
 
-; HL = Pattern_Ptr (lo)
+; IX = track
 IncPatternPtr:
-    inc [hl] ; Pattern_Ptr (lo)
+    inc [ix + Track.Pattern_Ptr]
     ret nz
-    inc l ; Pattern_Ptr (hi)
-    inc [hl] ; Pattern_Ptr (hi)
-    dec l ; Pattern_Ptr (lo)
+    inc [ix + Track.Pattern_Ptr+1]
     ret
 
-; HL = address of track
+; IX = address of track
 ; B = FM channel index (0..5)
-; Destroys: A, C, DE
+; Destroys: A, C, DE, HL
 RenderMelodicFMChannel:
-    push hl
-    ld de, Track.PeriodIndex
-    add hl, de
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, b ; channel
     or a, $20   ; Select Channel N Frequency High Bit, Block, and Key On
     out ($f0), a
@@ -1244,28 +1114,19 @@ RenderMelodicFMChannel:
     out ($f1), a
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    push hl ; PeriodIndex
     ; calculate effective volume
-    ld de, Track.Envelope_Vol - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld de, Track.MasterVol - Track.Envelope_Vol
-    add hl, de
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -1276,33 +1137,21 @@ RenderMelodicFMChannel:
     ld hl, VolumeTable
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    pop hl ; PeriodIndex
     @set_volume:
-    push hl ; PeriodIndex
-    ld de, Track.EffectiveVol - Track.PeriodIndex
-    add hl, de
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld e, a
-    push hl ; EffectiveVol
     ld hl, FMAttenuationTable
     add hl, de
     ld a, b ; channel
     or a, $30   ; Select Channel N Instrument and Volume
     out ($f0), a
-    ld a, [hl] ; map volume to attenuation
-    ld c, a
-    pop hl ; EffectiveVol
-    ld de, Track.Square_DutyCtrl - Track.EffectiveVol
-    add hl, de
-    ld a, [hl] ; Square_DutyCtrl
+    ld c, [hl] ; map volume to attenuation
+    ld a, [ix + Track.Square_DutyCtrl]
     and a, $f0 ; instrument in upper 4 bits
     or a, c
     out ($f1), a
-    pop hl ; PeriodIndex
-    inc l ; PeriodLo
-    ld e, [hl] ; PeriodLo
-    inc l ; PeriodHi
-    ld d, [hl] ; PeriodHi
+    ld e, [ix + Track.PeriodLo]
+    ld d, [ix + Track.PeriodHi]
     ld hl, PeriodToFMReg1x2xValues
     add hl, de
     add hl, de
@@ -1318,25 +1167,18 @@ RenderMelodicFMChannel:
     ld a, [hl] ; fnum high bit and block
     or a, $10 ; key on
     out ($f1), a
-    pop hl
     ret
 
-; HL = address of track
+; IX = address of track
 ; B = FM channel index (6..8)
-; Destroys: A, C, DE
+; Destroys: A, C, DE, HL
 RenderRhythmFMChannel:
-    push hl
-    ld de, Track.PeriodIndex
-    add hl, de
-    bit 7, [hl] ; PeriodIndex - check trigger flag
+    bit 7, [ix + Track.PeriodIndex] ; check trigger flag
     jr z, @no_trigger
-    res 7, [hl] ; PeriodIndex - reset trigger flag
+    res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $0e
     out ($f0), a
-    push hl ; PeriodIndex
-    ld de, Track.Square_DutyCtrl - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Square_DutyCtrl
+    ld a, [ix + Track.Square_DutyCtrl]
     cpl
     ld c, a
     ld a, [shadowRhythmControlReg]
@@ -1346,35 +1188,25 @@ RenderRhythmFMChannel:
     out ($f1), a ; clear instrument bits
     ld a, $0e
     out ($f0), a
-    ld a, [hl] ; Square_DutyCtrl
+    ld a, [ix + Track.Square_DutyCtrl]
     or a, c
     out ($f1), a ; set instrument bits
     ld [shadowRhythmControlReg], a
-    pop hl ; PeriodIndex
     @no_trigger:
     ; check if channel is muted
-    push hl ; PeriodIndex
-    ld de, Track.Status - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Status
-    pop hl ; PeriodIndex
+    ld a, [ix + Track.Status]
     or a, a
     jr z, @not_muted
     xor a
     jr @set_volume
     @not_muted:
-    push hl ; PeriodIndex
     ; calculate effective volume
-    ld de, Track.Envelope_Vol - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Envelope_Vol
+    ld a, [ix + Track.Envelope_Vol]
     srl a
     srl a
     srl a
     srl a
-    ld de, Track.MasterVol - Track.Envelope_Vol
-    add hl, de
-    or a, [hl] ; MasterVol
+    or a, [ix + Track.MasterVol]
     ld e, a
     ld d, 0
     ld hl, VolumeTable
@@ -1385,21 +1217,14 @@ RenderRhythmFMChannel:
     ld hl, VolumeTable
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    pop hl ; PeriodIndex
     @set_volume:
-    push hl ; PeriodIndex
-    ld de, Track.EffectiveVol - Track.PeriodIndex
-    add hl, de
-    ld [hl], a ; EffectiveVol
+    ld [ix + Track.EffectiveVol], a
     ld d, 0
     ld e, a
     ld hl, FMAttenuationTable
     add hl, de
     ld c, [hl] ; map volume to attenuation
-    pop hl ; PeriodIndex
-    ld de, Track.Square_DutyCtrl - Track.PeriodIndex
-    add hl, de
-    ld a, [hl] ; Square_DutyCtrl
+    ld a, [ix + Track.Square_DutyCtrl]
     or a, a
     jr z, @skip_volume_sync
     ld e, 0
@@ -1440,7 +1265,6 @@ RenderRhythmFMChannel:
     or a, e  ; set new bits
     ld [hl], a
     @skip_volume_sync:
-    pop hl
     ret
 @table:
 .db 1 | 4 ; $37 D7-D4
@@ -1449,9 +1273,10 @@ RenderRhythmFMChannel:
 .db 1 | 0 ; $37 D3-D0
 .db 0 | 0 ; $36 D3-D0
 
+; A = command
+; IX = track
 GoPatternCommand:
     push de
-    push hl
     rst JumpTable
 .dw .set_instr     ; 0
 .dw .release       ; 1
@@ -1462,7 +1287,6 @@ GoPatternCommand:
 .dw .pan_right     ; 6
 
     .set_instr:
-    pop hl ; Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ld a, [de] ; instrument
     inc de
@@ -1472,19 +1296,13 @@ GoPatternCommand:
     ret
 
     .release:
-    pop hl ; Pattern_Ptr (lo)
-    push hl
-    ld de, Track.Envelope_Hold - Track.Pattern_Ptr
-    add hl, de
     ld a, 1
-    ld [hl], a ; Envelope_Hold
-    pop hl ; Pattern_Ptr (lo)
+    ld [ix + Track.Envelope_Hold], a
     pop de ; pattern data ptr
     scf ; CF=1 signals keep processing pattern data
     ret
 
     .set_speed:
-    pop hl ; Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ld a, [de] ; new speed
     inc de
@@ -1494,14 +1312,9 @@ GoPatternCommand:
     ret
 
     .end_row: ; this command is used when there is no note for the row, only commands
-    pop hl ; Pattern_Ptr (lo)
-    push hl
-    ld de, Track.MasterVol - Track.Pattern_Ptr
-    add hl, de
-    ld a, [hl] ; MasterVol
+    ld a, [ix + Track.MasterVol]
     and $fe
-    ld [hl], a ; MasterVol
-    pop hl ; Pattern_Ptr (lo)
+    ld [ix + Track.MasterVol], a
     pop de ; pattern data ptr
     scf
     ccf ; CF=0 signals end of pattern data processing
@@ -1510,7 +1323,6 @@ GoPatternCommand:
     .pan_left:
     ; TODO: implement panning
     .done_panning:
-    pop hl ; Pattern_Ptr (lo)
     pop de ; pattern data ptr
     scf ; CF=1 signals keep processing pattern data
     ret
@@ -1525,10 +1337,10 @@ GoPatternCommand:
 
 ; A = instrument
 ; B = track number
-; preserves DE and HL
+; IX = track
+; preserves DE
 SetInstrument:
     push de
-    push hl ; Pattern_Ptr (lo)
     push af
     ld de, [trackHeaderTable]
     ld a, b
@@ -1559,33 +1371,21 @@ SetInstrument:
     jr nc, @3
     inc d
     @3:
-    ld a, l
-    add a, Track.Envelope_Ptr - Track.Pattern_Ptr
-    ld l, a
     ld a, [de] ; 0 - envelope lo
     inc de
-    ld [hl], a ; Envelope_Ptr (lo)
-    inc l
+    ld [ix + Track.Envelope_Ptr], a
     ld a, [de] ; 1 - envelope hi
     inc de
-    ld [hl], a ; Envelope_Ptr (hi)
-    ld a, l
-    sub a, Track.Envelope_Ptr+1 - Track.Effect_Kind
-    ld l, a
+    ld [ix + Track.Envelope_Ptr+1], a
     inc de ; 2 - unused
     ld a, [de] ; 3 - effect kind
     inc de
-    ld [hl], a ; Effect_Kind
-    inc l
+    ld [ix + Track.Effect_Kind], a
     ld a, [de] ; 4 - effect param
     inc de
-    ld [hl], a ; Effect_Param
-    ld a, l
-    add a, Track.Square_DutyCtrl - Track.Effect_Param
-    ld l, a
+    ld [ix + Track.Effect_Param], a
     ld a, [de] ; 5 - duty
-    ld [hl], a ; Square_DutyCtrl
-    pop hl ; Pattern_Ptr (lo)
+    ld [ix + Track.Square_DutyCtrl], a
     pop de ; pattern data ptr
     ret
 
@@ -1609,13 +1409,13 @@ SetSpeed:
     dec b
     jr nz, @loop
     pop bc
-    pop hl ; Pattern_Ptr (lo)
-    pop de ; pattern data ptr
+    pop hl
+    pop de
     ret
 
-; A = effect kind, HL = Effect_Param
+; A = effect kind, IX = track
 EffectTick:
-    push hl ; Effect_Param
+    ld a, [ix + Track.Effect_Kind]
     rst JumpTable
 .dw .null_tick         ; 0
 .dw .slide_up_tick     ; 1
@@ -1629,138 +1429,95 @@ EffectTick:
 .dw .pulsemod_tick     ; 9
 
     .null_tick:
-    pop hl ; Effect_Param
     ret
 
     .slide_up_tick:
 ; slide up by adding slide amount to period value
-    pop hl ; Effect_Param
-    push hl
-    ld c, [hl] ; Effect_Param
-    ld a, l ; Effect_Param
-    add a, Track.PeriodLo - Track.Effect_Param
-    ld l, a
-    ld a, [hl] ; PeriodLo
+    ld c, [ix + Track.Effect_Param]
+    ld a, [ix + Track.PeriodLo]
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [ix + Track.PeriodLo], a
     jr nc, @slide_skip_inc
-    ld a, [hl] ; PeriodHi
+    ld a, [ix + Track.PeriodHi]
     cp a, 7
     jr z, @clamp_slide_up
-    inc [hl] ; PeriodHi
+    inc [ix + Track.PeriodHi]
     @slide_skip_inc:
-    pop hl ; Effect_Param
     ret
     @clamp_slide_up:
-    dec l ; PeriodLo
     ld a, $ff
-    ld [hl], a ; PeriodLo
-    pop hl ; Effect_Param
+    ld [ix + Track.PeriodLo], a
     ret
 
     .slide_down_tick:
 ; slide down by subtracting slide amount from period value
-    pop hl ; Effect_Param
-    push hl
-    ld c, [hl] ; Effect_Param
-    ld a, l ; Effect_Param
-    add a, Track.PeriodLo - Track.Effect_Param
-    ld l, a
-    ld a, [hl] ; PeriodLo
+    ld c, [ix + Track.Effect_Param]
+    ld a, [ix + Track.PeriodLo]
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [ix + Track.PeriodLo], a
     jr nc, @slide_skip_dec
-    ld a, [hl] ; PeriodLo
+    ld a, [ix + Track.PeriodLo]
     or a
     jr z, @clamp_slide_up
-    dec [hl] ; PeriodHi
+    dec [ix + Track.PeriodHi]
     @slide_skip_dec:
-    pop hl ; Effect_Param
     ret
     @clamp_slide_up:
-    dec l ; PeriodLo
     xor a
-    ld [hl], a ; PeriodLo
-    pop hl ; Effect_Param
+    ld [ix + Track.PeriodLo], a
     ret
 
     .portamento_tick:
-    pop hl ; Effect_Param
-    push hl
-    ld c, [hl] ; Effect_Param
-    inc l
-    ld a, [hl] ; Effect_Portamento_Ctrl
-    inc l
+    ld c, [ix + Track.Effect_Param]
+    ld a, [ix + Track.Effect_Portamento_Ctrl]
     bit 7, a
     jr z, .portamento_exit
     srl a ; CF = direction (0=down, 1=up)
-    ld e, [hl] ; Effect_Portamento_TargetPeriodLo
-    inc l
-    ld d, [hl] ; Effect_Portamento_TargetPeriodHi
-    inc l
-    inc l ; PeriodIndex
-    inc l ; PeriodLo
-    ld a, [hl] ; PeriodLo
+    ld e, [ix + Track.Effect_Portamento_TargetPeriodLo]
+    ld d, [ix + Track.Effect_Portamento_TargetPeriodHi]
+    ld a, [ix + Track.PeriodLo]
     jr nc, .portamento_down
     ; slide up (add delta to current period value)
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
-    ld a, [hl] ; PeriodHi
+    ld [ix + Track.PeriodLo], a
+    ld a, [ix + Track.PeriodHi]
     adc a, 0
-    ld [hl], a ; PeriodHi
-    dec l
+    ld [ix + Track.PeriodHi], a
     ld c, a ; save periodhi
     ; check if target period has been reached (current period >= target period)
-    ld a, [hl] ; PeriodLo
+    ld a, [ix + Track.PeriodLo]
     sub a, e ; subtract targetperiodlo
     ld a, c ; periodhi
     sbc a, d ; subtract targetperiodhi
     jr nc, .portamento_done
     .portamento_exit:
-    pop hl ; Effect_Param
     ret
     .portamento_down:
     ; slide down (subtract delta from current period value)
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
-    ld a, [hl] ; PeriodHi
+    ld [ix + Track.PeriodLo], a
+    ld a, [ix + Track.PeriodHi]
     sbc a, 0
-    ld [hl], a ; PeriodHi
-    dec l
+    ld [ix + Track.PeriodHi], a
     ld c, a ; save periodhi
     ; check if target period has been reached (current period <= target period)
-    ld a, [hl] ; PeriodLo
+    ld a, [ix + Track.PeriodLo]
     sub a, e ; subtract targetperiodlo
     ld a, c ; periodhi
     sbc a, d ; subtract targetperiodhi
     jr nc, .portamento_exit
     .portamento_done:
     ; set final period
-    ld [hl], e ; PeriodLo
-    inc l
-    ld [hl], d ; PeriodHi
+    ld [ix + Track.PeriodLo], e
+    ld [ix + Track.PeriodHi], d
     ; halt
-    pop hl ; Effect_Param
-    inc l ; Effect_Portamento_Ctrl
     xor a, a
-    ld [hl], a ; Effect_Portamento_Ctrl
-    dec l
+    ld [ix + Track.Effect_Portamento_Ctrl], a
     ret
 
     .vibrato_tick:
-    pop hl ; Effect_Param
-    push hl
     ; reset period value
-    ld a, l
-    add a, Track.PeriodIndex - Track.Effect_Param
-    ld l, a
-    ld a, [hl] ; PeriodIndex
-    inc l ; PeriodLo
-    ld c, a ; save note
+    ld c, [ix + Track.PeriodIndex]
     ld a, b ; track
     cp a, 4 ; < 4 means PSG
     ld de, PSGPeriodTable
@@ -1772,16 +1529,12 @@ EffectTick:
     add a, c ; note
     ld e, a
     ld a, [de]
-    ld [hl], a ; PeriodLo
-    inc l ; PeriodHi
+    ld [ix + Track.PeriodLo], a
     inc de
     ld a, [de]
-    ld [hl], a ; PeriodHi
-    pop hl ; Effect_Param
-    inc l ; Effect_Pos
+    ld [ix + Track.PeriodHi], a
     ; get sine value
-    ld a, [hl] ; Effect_Pos
-    dec l
+    ld a, [ix + Track.Effect_Pos]
     and a, $1f
     ld de, VibratoTable
     add a, e
@@ -1789,8 +1542,7 @@ EffectTick:
     ld a, [de] ; sine value
     ld c, a
     ; *** convert sine value to real delta freq, according to vibrato depth ***
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [ix + Track.Effect_Param]
     and a, $0f ; VibratoDepth in lower 4 bits
     ld e, a
     ld d, 0
@@ -1808,66 +1560,45 @@ EffectTick:
     ld a, d
     rla
     ld c, a
-    ld a, [hl] ; Effect_Pos
-    push hl
+    ld a, [ix + Track.Effect_Pos]
     and a, $20
     jr z, .vib_add
     ; subtract c from period
-    ld a, l
-    add a, Track.PeriodLo - Track.Effect_Pos
-    ld l, a
-    ld a, [hl] ; PeriodLo
+    ld a, [ix + Track.PeriodLo]
     sub a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [ix + Track.PeriodLo], a
     jr nc, .vib_done
-    dec [hl] ; PeriodHi
+    dec [ix + Track.PeriodHi]
     jr .vib_done
     .vib_add:
     ; add c to period
-    ld a, l
-    add a, Track.PeriodLo - Track.Effect_Pos
-    ld l, a
-    ld a, [hl] ; PeriodLo
+    ld a, [ix + Track.PeriodLo]
     add a, c
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [ix + Track.PeriodLo], a
     jr nc, .vib_done
-    inc [hl] ; PeriodHi
+    inc [ix + Track.PeriodHi]
     .vib_done:
     ; increment pos
-    pop hl ; Effect_Pos
-    ld a, [hl] ; Effect_Pos
-    dec l
-    ld c, a
-    ld a, [hl] ; Effect_Param
-    inc l
+    ld a, [ix + Track.Effect_Param]
     srl a
     srl a
     srl a
     srl a ; vibrato speed
+    ld c, [ix + Track.Effect_Pos]
     add a, c
-    ld [hl], a ; Effect_Pos
-    dec l
+    ld [ix + Track.Effect_Pos], a
     ret
 
     .arpeggio_tick:
-    pop hl ; Effect_Param
-    push hl
-    ld c, [hl] ; Effect_Param
-    inc l
-    ld a, [hl] ; Effect_Pos
+    ld c, [ix + Track.Effect_Param]
+    ld a, [ix + Track.Effect_Pos]
     ld d, a
     inc a
     cp a, 6
     jr c, .skip
     xor a, a
     .skip:
-    ld [hl], a ; Effect_Pos
-    inc l
-    inc l ; Effect_VibratoCounter
-    inc l ; Effect_MasterVol
-    inc l ; PeriodIndex
+    ld [ix + Track.Effect_Pos], a
     ld a, d ; pos (0-5)
     srl a
     or a, a
@@ -1885,8 +1616,7 @@ EffectTick:
     srl a
     srl a
     .set_period:
-    add a, [hl] ; PeriodIndex
-    inc l ; PeriodLo
+    add a, [ix + Track.PeriodIndex]
     ld c, a ; save note
     ld a, b ; track
     cp a, 4 ; < 4 means PSG
@@ -1899,17 +1629,14 @@ EffectTick:
     add a, c ; note
     ld e, a
     ld a, [de]
-    ld [hl], a ; PeriodLo
-    inc l
+    ld [ix + Track.PeriodLo], a
     inc de
     ld a, [de]
-    ld [hl], a ; PeriodHi
-    pop hl ; Effect_Param
+    ld [ix + Track.PeriodHi], a
     ret
 
     .volume_slide_tick:
-    pop hl ; Effect_Param
-    ld a, [hl] ; Effect_Param
+    ld a, [ix + Track.Effect_Param]
     cp a, $10
     jr c, @sub_volume
     ; add to volume
@@ -1917,10 +1644,7 @@ EffectTick:
     srl a
     and a, $3c ; delta * 4
     ld c, a
-    push hl ; Effect_Param
-    ld de, Track.MasterVol - Track.Effect_Param
-    add hl, de
-    ld a, [hl] ; MasterVol
+    ld a, [ix + Track.MasterVol]
     add a, c
     jr nc, @set_volume
     ld a, $fc ; max volume
@@ -1929,51 +1653,37 @@ EffectTick:
     sla a
     sla a ; delta * 4
     ld c, a
-    push hl ; Effect_Param
-    ld de, Track.MasterVol - Track.Effect_Param
-    add hl, de
-    ld a, [hl] ; MasterVol
+    ld a, [ix + Track.MasterVol]
     sub a, c
     jr nc, @set_volume
     xor a, a
     @set_volume:
-    ld [hl], a ; MasterVol
-    pop hl ; Effect_Param
+    ld [ix + Track.MasterVol], a
     ret
 
     .tremolo_tick:
-    pop hl ; Effect_Param
     ; TODO: implement tremolo
     ret
 
     .cut_tick:
-    pop hl ; Effect_Param
-    ld c, [hl] ; Effect_Param
-    inc l
-    ld a, [hl] ; Effect_Pos
+    ld c, [ix + Track.Effect_Param]
+    ld a, [ix + Track.Effect_Pos]
     cp a, c
     inc a
-    ld [hl], a ; Effect_Pos
-    dec l
+    ld [ix + Track.Effect_Pos], a
     ret c
     ; cut! (set volume to 0)
-    push hl ; Effect_Param
-    ld a, l ; Effect_Param
-    add a, Track.MasterVol - Track.Effect_Param
-    ld l, a ; MasterVol
     xor a, a
-    ld [hl], a ; MasterVol
-    pop hl ; Effect_Param
+    ld [ix + Track.MasterVol], a
     ret
 
     .pulsemod_tick:
-    pop hl ; Effect_Param
     ; TODO: implement pulsemod
     ret
 
-; HL = Envelope_Phase
+; IX = track
 EnvelopeTick:
-    ld a, [hl] ; Envelope_Phase
+    ld a, [ix + Track.Envelope_Phase]
     rla
     jr c, .init    ; $80
     rla
@@ -1983,159 +1693,103 @@ EnvelopeTick:
     ret
 
     .init:
-    push hl ; Envelope_Phase
-    srl [hl] ; Envelope_Phase = $40
-    inc l ; Envelope_Ptr (lo)
-    ld e, [hl] ; Envelope_Ptr (lo)
-    inc l
-    ld d, [hl] ; Envelope_Ptr (hi)
-    inc l
+    srl [ix + Track.Envelope_Phase] ; Envelope_Phase = $40
+    ld e, [ix + Track.Envelope_Ptr]
+    ld d, [ix + Track.Envelope_Ptr+1]
     xor a, a
-    ld [hl], a ; Envelope_Pos = 0
+    ld [ix + Track.Envelope_Pos], a
     .init_vol:
-    ; HL = Envelope_Pos
     ld a, [de] ; 1st byte = start volume
     inc de
-    inc [hl] ; Envelope_Pos
-    inc l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol
-    inc l ; Envelope_Step
+    inc [ix + Track.Envelope_Pos]
+    ld [ix + Track.Envelope_Vol], a
     .point_init:
-    ; HL = Envelope_Step
     ld a, [de] ; fetch envelope byte
     inc de
     cp a, $ff ; end of envelope reached?
     jr z, .env_end
     ; point OK, set 3-tuple (step, dest, hold)
-    ld [hl], a ; Envelope_Step
-    inc l
+    ld [ix + Track.Envelope_Step], a
     ld a, [de]
     inc de
-    ld [hl], a ; Envelope_Dest
-    inc l
+    ld [ix + Track.Envelope_Dest], a
     ld a, [de]
     inc de
-    ld [hl], a ; Envelope_Hold
-    ld a, l
-    sub a, Track.Envelope_Hold - Track.Envelope_Pos
-    ld l, a
-    inc [hl] ; Envelope_Pos
-    inc [hl] ; Envelope_Pos
-    inc [hl] ; Envelope_Pos
-    pop hl ; Envelope_Phase
+    ld [ix + Track.Envelope_Hold], a
+    inc [ix + Track.Envelope_Pos]
+    inc [ix + Track.Envelope_Pos]
+    inc [ix + Track.Envelope_Pos]
     jr .process
     .env_end:
     ld a, [de]
     cp a, $ff ; definitely end?
     jr z, .env_stop
     ; loop the envelope from the given offset
-    ld c, a
-    ld a, l
-    sub a, Track.Envelope_Step - Track.Envelope_Ptr
-    ld l, a
-    ld e, [hl] ; Envelope_Ptr (lo)
-    inc l
-    ld d, [hl] ; Envelope_Ptr (hi)
-    inc l
+    ld e, [ix + Track.Envelope_Ptr]
+    ld d, [ix + Track.Envelope_Ptr+1]
     ld a, c
-    ld [hl], a ; Envelope_Pos
-    inc l
-    inc l ; Envelope_Step
+    ld [ix + Track.Envelope_Pos], a
     add a, e
     ld e, a
     jr nc, .point_init
     inc d
     jr .point_init
     .env_stop:
-    pop hl ; Envelope_Phase
     xor a, a
-    ld [hl], a ; Envelope_Phase
+    ld [ix + Track.Envelope_Phase], a
     ret
 
     .sustain:
-    push hl ; Envelope_Phase
-    sla [hl] ; Envelope_Phase = process (speculative)
-    ld a, l
-    add a, Track.Envelope_Hold - Track.Envelope_Phase
-    ld l, a
-    ld a, [hl] ; Envelope_Hold
+    sla [ix + Track.Envelope_Phase] ; Envelope_Phase = process (speculative)
+    ld a, [ix + Track.Envelope_Hold]
     cp a, $ff ; hold forever?
     jr z, .keep_sustaining
-    dec [hl] ; Envelope_Hold -= 1
+    dec [ix + Track.Envelope_Hold]
     jr nz, .keep_sustaining
     jr .next_point
     .keep_sustaining:
-    pop hl ; Envelope_Phase
-    srl [hl] ; Envelope_Phase = sustain
+    srl [ix + Track.Envelope_Phase] ; Envelope_Phase = sustain
     ret
 
     .process:
-    push hl ; Envelope_Phase
-    ld a, l
-    add a, Track.Envelope_Vol - Track.Envelope_Phase
-    ld l, a
-    ld a, [hl] ; Envelope_Vol
-    inc l
-    push af ; save vol
-    ld c, [hl] ; Envelope_Step
-    inc l ; Envelope_Dest
-    pop af ; vol
-    cp a, [hl] ; Envelope_Dest > Vol?
+    ld a, [ix + Track.Envelope_Vol]
+    ld c, [ix + Track.Envelope_Step]
+    cp a, [ix + Track.Envelope_Dest] ; Envelope_Dest > Vol?
     jr nc, .sub_volume
     ; add step to vol
     add a, c
     jr c, .reached_dest
-    cp a, [hl] ; Envelope_Dest > new vol?
+    cp a, [ix + Track.Envelope_Dest] ; Envelope_Dest > new vol?
     jr z, .reached_dest
     jr nc, .reached_dest
-    dec l ; Envelope_Step
-    dec l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol
-    pop hl ; Envelope_Phase
+    ld [ix + Track.Envelope_Vol], a
     ret
     .sub_volume:
     ; subtract step from volume
     sub a, c
     jr c, .reached_dest
-    cp a, [hl] ; Envelope_Dest > new vol?
+    cp a, [ix + Track.Envelope_Dest] ; Envelope_Dest > new vol?
     jr z, .reached_dest
     jr c, .reached_dest
-    dec l ; Envelope_Step
-    dec l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol
-    pop hl ; Envelope_Phase
+    ld [ix + Track.Envelope_Vol], a
     ret
     .reached_dest:
-    ld a, [hl] ; Envelope_Dest
-    dec l ; Envelope_Step
-    dec l ; Envelope_Vol
-    ld [hl], a ; Envelope_Vol = dest
-    inc l ; Envelope_Step
-    inc l ; Envelope_Dest
-    inc l ; Envelope_Hold
-    ld a, [hl] ; Envelope_Hold
+    ld a, [ix + Track.Envelope_Dest]
+    ld [ix + Track.Envelope_Vol], a
+    ld a, [ix + Track.Envelope_Hold]
     or a, a
     jr z, .next_point
-    pop hl ; Envelope_Phase
-    srl [hl] ; phase = sustain
+    srl [ix + Track.Envelope_Phase] ; phase = sustain
     ret
     .next_point:
-    ; HL = Envelope_Hold
-    ld a, l ; Envelope_Hold
-    sub a, Track.Envelope_Hold - Track.Envelope_Ptr
-    ld l, a
-    ld e, [hl] ; Envelope_Ptr (lo)
-    inc l
-    ld d, [hl] ; Envelope_Ptr (hi)
-    inc l
-    ld a, [hl] ; Envelope_Pos
-    inc l
+    ld e, [ix + Track.Envelope_Ptr]
+    ld d, [ix + Track.Envelope_Ptr+1]
+    ld a, [ix + Track.Envelope_Pos]
     add a, e
     ld e, a
     jr nc, .skip_inc
     inc d
     .skip_inc:
-    inc l ; Envelope_Step
     jp .point_init
 
 .ends
