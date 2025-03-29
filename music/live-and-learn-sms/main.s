@@ -100,7 +100,7 @@ banks 1
     PeriodIndex db                            ; 0E
     PeriodLo db                               ; 0F
     PeriodHi db                               ; 10
-    Square_DutyCtrl db                        ; 11
+    InstrumentData db                         ; 11
     Envelope_Phase db                         ; 12
     Envelope_Ptr dw                           ; 13
     Envelope_Pos db                           ; 15
@@ -454,7 +454,7 @@ StartSong:
     ld [de], a ; PeriodLo
     inc e
     ld [de], a ; PeriodHi
-    inc e ; Square_DutyCtrl
+    inc e ; InstrumentData
     inc e ; Envelope_Phase
     ld [de], a ; Envelope_Phase
     ld a, e
@@ -1030,7 +1030,7 @@ RenderPSGChannel4:
     dec a
     @no_clamp:
     set 2, a ; white noise is default
-    bit 7, [ix + Track.Square_DutyCtrl]; LFSR width
+    bit 7, [ix + Track.InstrumentData]; LFSR width
     jr z, @no_regular_output
     res 2, a ; synchronous noise
     @no_regular_output:
@@ -1146,7 +1146,7 @@ RenderMelodicFMChannel:
     or a, $30   ; Select Channel N Instrument and Volume
     out ($f0), a
     ld c, [hl] ; map volume to attenuation
-    ld a, [ix + Track.Square_DutyCtrl]
+    ld a, [ix + Track.InstrumentData]
     and a, $f0 ; instrument in upper 4 bits
     or a, c
     out ($f1), a
@@ -1178,7 +1178,7 @@ RenderRhythmFMChannel:
     res 7, [ix + Track.PeriodIndex] ; reset trigger flag
     ld a, $0e
     out ($f0), a
-    ld a, [ix + Track.Square_DutyCtrl]
+    ld a, [ix + Track.InstrumentData]
     cpl
     ld c, a
     ld a, [shadowRhythmControlReg]
@@ -1188,7 +1188,7 @@ RenderRhythmFMChannel:
     out ($f1), a ; clear instrument bits
     ld a, $0e
     out ($f0), a
-    ld a, [ix + Track.Square_DutyCtrl]
+    ld a, [ix + Track.InstrumentData]
     or a, c
     out ($f1), a ; set instrument bits
     ld [shadowRhythmControlReg], a
@@ -1224,7 +1224,7 @@ RenderRhythmFMChannel:
     ld hl, FMAttenuationTable
     add hl, de
     ld c, [hl] ; map volume to attenuation
-    ld a, [ix + Track.Square_DutyCtrl]
+    ld a, [ix + Track.InstrumentData]
     or a, a
     jr z, @skip_volume_sync
     ld e, 0
@@ -1384,8 +1384,8 @@ SetInstrument:
     ld a, [de] ; 4 - effect param
     inc de
     ld [ix + Track.Effect_Param], a
-    ld a, [de] ; 5 - duty
-    ld [ix + Track.Square_DutyCtrl], a
+    ld a, [de] ; 5 - instrument data
+    ld [ix + Track.InstrumentData], a
     pop de ; pattern data ptr
     ret
 
