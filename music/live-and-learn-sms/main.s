@@ -131,6 +131,7 @@ buttonsHeld: db
 buttonsPressed: db
 mainState: db
 frameCounter: db
+selectedTrackIndex: db
 
 ; --- Begin Sound engine
 
@@ -237,8 +238,8 @@ PauseHandler:
 ; Destroys: a, b
 PollInput:
     in a, ($DC)    ; Read D-Pad + Button 1 & 2
-    and %11000000  ; Mask out unused bits
     cpl            ; Flip bits (1 = pressed)
+    and %00111111  ; Mask out unused bits
     ld b, a
     ld a, [buttonsHeld]
 	xor b
@@ -747,9 +748,9 @@ RenderPSGToneChannel1:
     ld a, $9f ; tone 1 attenuation
     out ($7f), a ; mute
     @no_trigger:
+    ld d, 0
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -761,7 +762,6 @@ RenderPSGToneChannel1:
     srl a
     or a, [ix + Track.MasterVol]
     ld e, a
-    ld d, 0
     ld hl, VolumeTable
     add hl, de
     ld a, [masterVol]
@@ -821,9 +821,9 @@ RenderPSGToneChannel3:
     ld a, $df ; tone 3 attenuation
     out ($7f), a ; mute
     @no_trigger:
+    ld d, 0
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -835,7 +835,6 @@ RenderPSGToneChannel3:
     srl a
     or a, [ix + Track.MasterVol]
     ld e, a
-    ld d, 0
     ld hl, VolumeTable
     add hl, de
     ld a, [masterVol]
@@ -895,9 +894,9 @@ RenderPSGToneChannel2:
     ld a, $bf ; tone 2 attenuation
     out ($7f), a ; mute
     @no_trigger:
+    ld d, 0
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -909,7 +908,6 @@ RenderPSGToneChannel2:
     srl a
     or a, [ix + Track.MasterVol]
     ld e, a
-    ld d, 0
     ld hl, VolumeTable
     add hl, de
     ld a, [masterVol]
@@ -969,9 +967,9 @@ RenderPSGNoiseChannel:
     ld a, $ff ; noise attenuation
     out ($7f), a ; mute
     @no_trigger:
+    ld d, 0
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -983,7 +981,6 @@ RenderPSGNoiseChannel:
     srl a
     or a, [ix + Track.MasterVol]
     ld e, a
-    ld d, 0
     ld hl, VolumeTable
     add hl, de
     ld a, [masterVol]
@@ -1095,8 +1092,7 @@ RenderMelodicFMChannel:
     out ($f1), a
     @no_trigger:
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -1175,8 +1171,7 @@ RenderRhythmFMChannel:
     ld [shadowRhythmControlReg], a
     @no_trigger:
     ; check if channel is muted
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted
     xor a
     jr @set_volume
@@ -1796,10 +1791,12 @@ VolumeTable: ; 256 bytes
 .db $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$0A,$0B,$0C,$0D,$0E,$0F
 
 PSGPeriodTable: ; 128 bytes
-.dw $00e,$080,$0ec,$151,$1b1,$20c,$261,$2b2,$2fe,$346,$38a,$3ca,$407,$440,$476,$4a8
-.dw $4d8,$506,$530,$559,$57f,$5a3,$5c5,$5e5,$603,$620,$63b,$654,$66c,$683,$698,$6ac
-.dw $6bf,$6d1,$6e2,$6f2,$701,$710,$71d,$72a,$736,$741,$74c,$756,$75f,$768,$771,$779
-.dw $780,$788,$78e,$795,$79b,$7a0,$7a6,$7ab,$7af,$7b4,$7b8,$7bc,$7c0,$7c4,$7c7,$7ff
+.dw $00d,$07f,$0eb
+.dw $151,$1b1,$20b,$261,$2b1,$2fd,$345,$389,$3c9,$407,$43f,$475
+.dw $4a7,$4d7,$505,$52f,$559,$57f,$5a3,$5c5,$5e5,$603,$61f,$63b
+.dw $653,$66b,$683,$697,$6ab,$6bf,$6d1,$6e1,$6f1,$701,$70f,$71d
+.dw $729,$735,$741,$74b,$755,$75f,$767,$771,$779,$77f,$787,$78d
+.dw $795,$79b,$79f,$7a5,$7ab,$7af,$7b3,$7b7,$7bb,$7bf,$7c3,$7c7
 
 ; ProTracker sine table (32 bytes)
 VibratoTable:
@@ -1824,130 +1821,130 @@ NoteToFMPeriod: ; 160 bytes
 .dw 1600,1625,1650,1675,1700,1725,1750,1775,1800,1825,1850,1875,1900,1925,1950,1975
 
 PeriodToFMReg1x2xValues:
-.dw $1b0,$1b1,$1b2,$1b3,$1b4,$1b5,$1b6,$1b7,$1b8,$1b9,$1ba,$1bb,$1bc,$1bd,$1be,$1bf
-.dw $1c0,$1c1,$1c2,$1c3,$1c4,$1c5,$1c6,$1c7,$1c8,$1c9,$1ca,$1cb,$1cc,$1ce,$1cf,$1d0
-.dw $1d1,$1d2,$1d3,$1d4,$1d5,$1d6,$1d7,$1d8,$1da,$1db,$1dc,$1dd,$1de,$1df,$1e0,$1e1
-.dw $1e2,$1e3,$1e4,$1e6,$1e7,$1e8,$1e9,$1ea,$1eb,$1ed,$1ee,$1ef,$1f0,$1f1,$1f2,$1f3
-.dw $1f5,$1f6,$1f7,$1f8,$1f9,$1fa,$1fc,$1fd,$1fe,$1ff,$300,$300,$301,$302,$302,$303
-.dw $303,$304,$305,$305,$306,$307,$307,$308,$308,$309,$30a,$30a,$30b,$30b,$30c,$30d
-.dw $30d,$30e,$30e,$30f,$310,$310,$311,$312,$312,$313,$314,$314,$315,$315,$316,$317
-.dw $317,$318,$319,$319,$31a,$31b,$31b,$31c,$31d,$31d,$31e,$31f,$31f,$320,$321,$321
-.dw $322,$323,$323,$324,$325,$325,$326,$327,$327,$328,$329,$329,$32a,$32b,$32c,$32c
-.dw $32d,$32e,$32e,$32f,$330,$330,$331,$332,$332,$333,$334,$335,$335,$336,$337,$338
-.dw $338,$339,$33a,$33a,$33b,$33c,$33d,$33d,$33e,$33f,$340,$340,$341,$342,$342,$343
-.dw $344,$345,$346,$346,$347,$348,$349,$349,$34a,$34b,$34c,$34c,$34d,$34e,$34f,$350
-.dw $350,$351,$352,$353,$353,$354,$355,$356,$356,$357,$358,$359,$35a,$35b,$35b,$35c
-.dw $35d,$35e,$35f,$35f,$360,$361,$362,$363,$363,$364,$365,$366,$367,$368,$368,$369
-.dw $36a,$36b,$36c,$36d,$36d,$36e,$36f,$370,$371,$372,$373,$373,$374,$375,$376,$377
-.dw $378,$379,$37a,$37a,$37b,$37c,$37d,$37e,$37f,$380,$380,$381,$382,$383,$384,$385
-.dw $386,$387,$388,$389,$38a,$38a,$38b,$38c,$38d,$38e,$38f,$390,$391,$392,$393,$394
-.dw $395,$395,$396,$397,$398,$399,$39a,$39b,$39c,$39d,$39e,$39f,$3a0,$3a1,$3a2,$3a3
-.dw $3a4,$3a5,$3a6,$3a7,$3a8,$3a9,$3aa,$3ab,$3ac,$3ad,$3ae,$3af,$3b0,$3b1,$3b2,$3b3
-.dw $3b4,$3b5,$3b6,$3b7,$3b8,$3b9,$3ba,$3bb,$3bc,$3bd,$3be,$3bf,$3c0,$3c1,$3c2,$3c3
-.dw $3c4,$3c5,$3c6,$3c7,$3c8,$3c9,$3ca,$3cb,$3cd,$3ce,$3cf,$3d0,$3d1,$3d2,$3d3,$3d4
-.dw $3d5,$3d6,$3d7,$3d8,$3da,$3db,$3dc,$3dd,$3de,$3df,$3e0,$3e1,$3e2,$3e3,$3e4,$3e6
-.dw $3e7,$3e8,$3e9,$3ea,$3eb,$3ed,$3ee,$3ef,$3f0,$3f1,$3f2,$3f3,$3f5,$3f6,$3f7,$3f8
-.dw $3f9,$3fa,$3fc,$3fd,$3fe,$3ff,$500,$500,$501,$502,$502,$503,$503,$504,$505,$505
-.dw $506,$507,$507,$508,$508,$509,$50a,$50a,$50b,$50b,$50c,$50d,$50d,$50e,$50e,$50f
-.dw $510,$510,$511,$512,$512,$513,$514,$514,$515,$516,$516,$517,$517,$518,$519,$519
-.dw $51a,$51b,$51b,$51c,$51d,$51d,$51e,$51f,$51f,$520,$521,$521,$522,$523,$523,$524
-.dw $525,$525,$526,$527,$527,$528,$529,$529,$52a,$52b,$52c,$52c,$52d,$52e,$52e,$52f
-.dw $530,$530,$531,$532,$532,$533,$534,$535,$535,$536,$537,$538,$538,$539,$53a,$53a
-.dw $53b,$53c,$53d,$53d,$53e,$53f,$540,$540,$541,$542,$542,$543,$544,$545,$545,$546
-.dw $547,$548,$549,$549,$54a,$54b,$54c,$54c,$54d,$54e,$54f,$54f,$550,$551,$552,$553
-.dw $553,$554,$555,$556,$556,$557,$558,$559,$55a,$55a,$55b,$55c,$55d,$55e,$55f,$55f
-.dw $560,$561,$562,$563,$563,$564,$565,$566,$567,$568,$568,$569,$56a,$56b,$56c,$56d
-.dw $56d,$56e,$56f,$570,$571,$572,$573,$573,$574,$575,$576,$577,$578,$579,$579,$57a
-.dw $57b,$57c,$57d,$57e,$57f,$580,$580,$581,$582,$583,$584,$585,$586,$587,$588,$589
-.dw $58a,$58a,$58b,$58c,$58d,$58e,$58f,$590,$591,$592,$593,$594,$595,$595,$596,$597
-.dw $598,$599,$59a,$59b,$59c,$59d,$59e,$59f,$5a0,$5a1,$5a2,$5a3,$5a4,$5a5,$5a6,$5a7
-.dw $5a8,$5a9,$5aa,$5ab,$5ac,$5ad,$5ae,$5af,$5b0,$5b1,$5b2,$5b3,$5b4,$5b5,$5b6,$5b7
-.dw $5b8,$5b9,$5ba,$5bb,$5bc,$5bd,$5be,$5bf,$5c0,$5c1,$5c2,$5c3,$5c4,$5c5,$5c6,$5c7
-.dw $5c8,$5c9,$5ca,$5cb,$5cc,$5ce,$5cf,$5d0,$5d1,$5d2,$5d3,$5d4,$5d5,$5d6,$5d7,$5d8
-.dw $5da,$5db,$5dc,$5dd,$5de,$5df,$5e0,$5e1,$5e2,$5e3,$5e4,$5e6,$5e7,$5e8,$5e9,$5ea
-.dw $5eb,$5ed,$5ee,$5ef,$5f0,$5f1,$5f2,$5f3,$5f5,$5f6,$5f7,$5f8,$5f9,$5fa,$5fc,$5fd
-.dw $5fe,$5ff,$700,$700,$701,$702,$702,$703,$703,$704,$705,$705,$706,$707,$707,$708
-.dw $708,$709,$70a,$70a,$70b,$70b,$70c,$70d,$70d,$70e,$70e,$70f,$710,$710,$711,$712
-.dw $712,$713,$714,$714,$715,$715,$716,$717,$717,$718,$719,$719,$71a,$71b,$71b,$71c
-.dw $71d,$71d,$71e,$71f,$71f,$720,$721,$721,$722,$723,$723,$724,$725,$725,$726,$727
-.dw $727,$728,$729,$729,$72a,$72b,$72c,$72c,$72d,$72e,$72e,$72f,$730,$730,$731,$732
-.dw $732,$733,$734,$735,$735,$736,$737,$738,$738,$739,$73a,$73a,$73b,$73c,$73d,$73d
-.dw $73e,$73f,$740,$740,$741,$742,$742,$743,$744,$745,$745,$746,$747,$748,$749,$749
-.dw $74a,$74b,$74c,$74c,$74d,$74e,$74f,$74f,$750,$751,$752,$753,$753,$754,$755,$756
-.dw $756,$757,$758,$759,$75a,$75b,$75b,$75c,$75d,$75e,$75f,$75f,$760,$761,$762,$763
-.dw $763,$764,$765,$766,$767,$768,$768,$769,$76a,$76b,$76c,$76d,$76d,$76e,$76f,$770
-.dw $771,$772,$773,$773,$774,$775,$776,$777,$778,$779,$779,$77a,$77b,$77c,$77d,$77e
-.dw $77f,$780,$780,$781,$782,$783,$784,$785,$786,$787,$788,$789,$78a,$78a,$78b,$78c
-.dw $78d,$78e,$78f,$790,$791,$792,$793,$794,$795,$795,$796,$797,$798,$799,$79a,$79b
-.dw $79c,$79d,$79e,$79f,$7a0,$7a1,$7a2,$7a3,$7a4,$7a5,$7a6,$7a7,$7a8,$7a9,$7aa,$7ab
-.dw $7ac,$7ad,$7ae,$7af,$7b0,$7b1,$7b2,$7b3,$7b4,$7b5,$7b6,$7b7,$7b8,$7b9,$7ba,$7bb
-.dw $7bc,$7bd,$7be,$7bf,$7c0,$7c1,$7c2,$7c3,$7c4,$7c5,$7c6,$7c7,$7c8,$7c9,$7ca,$7cb
-.dw $7cd,$7ce,$7cf,$7d0,$7d1,$7d2,$7d3,$7d4,$7d5,$7d6,$7d7,$7d8,$7da,$7db,$7dc,$7dd
-.dw $7de,$7df,$7e0,$7e1,$7e2,$7e3,$7e4,$7e6,$7e7,$7e8,$7e9,$7ea,$7eb,$7ed,$7ee,$7ef
-.dw $7f0,$7f1,$7f2,$7f3,$7f5,$7f6,$7f7,$7f8,$7f9,$7fa,$7fc,$7fd,$7fe,$7ff,$900,$900
-.dw $901,$902,$902,$903,$903,$904,$905,$905,$906,$907,$907,$908,$908,$909,$90a,$90a
-.dw $90b,$90b,$90c,$90d,$90d,$90e,$90e,$90f,$910,$910,$911,$912,$912,$913,$914,$914
-.dw $915,$915,$916,$917,$917,$918,$919,$919,$91a,$91b,$91b,$91c,$91d,$91d,$91e,$91f
-.dw $91f,$920,$921,$921,$922,$923,$923,$924,$925,$925,$926,$927,$927,$928,$929,$929
-.dw $92a,$92b,$92c,$92c,$92d,$92e,$92e,$92f,$930,$930,$931,$932,$932,$933,$934,$935
-.dw $935,$936,$937,$938,$938,$939,$93a,$93a,$93b,$93c,$93d,$93d,$93e,$93f,$940,$940
-.dw $941,$942,$942,$943,$944,$945,$945,$946,$947,$948,$949,$949,$94a,$94b,$94c,$94c
-.dw $94d,$94e,$94f,$94f,$950,$951,$952,$953,$953,$954,$955,$956,$956,$957,$958,$959
-.dw $95a,$95a,$95b,$95c,$95d,$95e,$95f,$95f,$960,$961,$962,$963,$963,$964,$965,$966
-.dw $967,$968,$968,$969,$96a,$96b,$96c,$96d,$96d,$96e,$96f,$970,$971,$972,$973,$973
-.dw $974,$975,$976,$977,$978,$979,$97a,$97a,$97b,$97c,$97d,$97e,$97f,$980,$980,$981
-.dw $982,$983,$984,$985,$986,$987,$988,$989,$98a,$98a,$98b,$98c,$98d,$98e,$98f,$990
-.dw $991,$992,$993,$994,$995,$995,$996,$997,$998,$999,$99a,$99b,$99c,$99d,$99e,$99f
-.dw $9a0,$9a1,$9a2,$9a3,$9a4,$9a5,$9a6,$9a7,$9a8,$9a9,$9aa,$9ab,$9ac,$9ad,$9ae,$9af
-.dw $9b0,$9b1,$9b2,$9b3,$9b4,$9b5,$9b6,$9b7,$9b8,$9b9,$9ba,$9bb,$9bc,$9bd,$9be,$9bf
-.dw $9c0,$9c1,$9c2,$9c3,$9c4,$9c5,$9c6,$9c7,$9c8,$9c9,$9ca,$9cb,$9cd,$9ce,$9cf,$9d0
-.dw $9d1,$9d2,$9d3,$9d4,$9d5,$9d6,$9d7,$9d8,$9da,$9db,$9dc,$9dd,$9de,$9df,$9e0,$9e1
-.dw $9e2,$9e3,$9e4,$9e6,$9e7,$9e8,$9e9,$9ea,$9eb,$9ed,$9ee,$9ef,$9f0,$9f1,$9f2,$9f3
-.dw $9f5,$9f6,$9f7,$9f8,$9f9,$9fa,$9fc,$9fd,$9fe,$9ff,$b00,$b00,$b01,$b02,$b02,$b03
-.dw $b03,$b04,$b05,$b05,$b06,$b07,$b07,$b08,$b08,$b09,$b0a,$b0a,$b0b,$b0b,$b0c,$b0d
-.dw $b0d,$b0e,$b0e,$b0f,$b10,$b10,$b11,$b12,$b12,$b13,$b14,$b14,$b15,$b16,$b16,$b17
-.dw $b17,$b18,$b19,$b19,$b1a,$b1b,$b1b,$b1c,$b1d,$b1d,$b1e,$b1f,$b1f,$b20,$b21,$b21
-.dw $b22,$b23,$b23,$b24,$b25,$b25,$b26,$b27,$b27,$b28,$b29,$b29,$b2a,$b2b,$b2c,$b2c
-.dw $b2d,$b2e,$b2e,$b2f,$b30,$b30,$b31,$b32,$b32,$b33,$b34,$b35,$b35,$b36,$b37,$b38
-.dw $b38,$b39,$b3a,$b3a,$b3b,$b3c,$b3d,$b3d,$b3e,$b3f,$b40,$b40,$b41,$b42,$b42,$b43
-.dw $b44,$b45,$b45,$b46,$b47,$b48,$b49,$b49,$b4a,$b4b,$b4c,$b4c,$b4d,$b4e,$b4f,$b4f
-.dw $b50,$b51,$b52,$b53,$b53,$b54,$b55,$b56,$b56,$b57,$b58,$b59,$b5a,$b5a,$b5b,$b5c
-.dw $b5d,$b5e,$b5f,$b5f,$b60,$b61,$b62,$b63,$b63,$b64,$b65,$b66,$b67,$b68,$b68,$b69
-.dw $b6a,$b6b,$b6c,$b6d,$b6d,$b6e,$b6f,$b70,$b71,$b72,$b73,$b73,$b74,$b75,$b76,$b77
-.dw $b78,$b79,$b79,$b7a,$b7b,$b7c,$b7d,$b7e,$b7f,$b80,$b80,$b81,$b82,$b83,$b84,$b85
-.dw $b86,$b87,$b88,$b89,$b8a,$b8a,$b8b,$b8c,$b8d,$b8e,$b8f,$b90,$b91,$b92,$b93,$b94
-.dw $b95,$b95,$b96,$b97,$b98,$b99,$b9a,$b9b,$b9c,$b9d,$b9e,$b9f,$ba0,$ba1,$ba2,$ba3
-.dw $ba4,$ba5,$ba6,$ba7,$ba8,$ba9,$baa,$bab,$bac,$bad,$bae,$baf,$bb0,$bb1,$bb2,$bb3
-.dw $bb4,$bb5,$bb6,$bb7,$bb8,$bb9,$bba,$bbb,$bbc,$bbd,$bbe,$bbf,$bc0,$bc1,$bc2,$bc3
-.dw $bc4,$bc5,$bc6,$bc7,$bc8,$bc9,$bca,$bcb,$bcd,$bce,$bcf,$bd0,$bd1,$bd2,$bd3,$bd4
-.dw $bd5,$bd6,$bd7,$bd8,$bda,$bdb,$bdc,$bdd,$bde,$bdf,$be0,$be1,$be2,$be3,$be4,$be6
-.dw $be7,$be8,$be9,$bea,$beb,$bed,$bee,$bef,$bf0,$bf1,$bf2,$bf3,$bf5,$bf6,$bf7,$bf8
-.dw $bf9,$bfa,$bfc,$bfd,$bfe,$bff,$d00,$d00,$d01,$d02,$d02,$d03,$d03,$d04,$d05,$d05
-.dw $d06,$d07,$d07,$d08,$d08,$d09,$d0a,$d0a,$d0b,$d0b,$d0c,$d0d,$d0d,$d0e,$d0e,$d0f
-.dw $d10,$d10,$d11,$d12,$d12,$d13,$d14,$d14,$d15,$d16,$d16,$d17,$d17,$d18,$d19,$d19
-.dw $d1a,$d1b,$d1b,$d1c,$d1d,$d1d,$d1e,$d1f,$d1f,$d20,$d21,$d21,$d22,$d23,$d23,$d24
-.dw $d25,$d25,$d26,$d27,$d27,$d28,$d29,$d29,$d2a,$d2b,$d2c,$d2c,$d2d,$d2e,$d2e,$d2f
-.dw $d30,$d30,$d31,$d32,$d32,$d33,$d34,$d35,$d35,$d36,$d37,$d38,$d38,$d39,$d3a,$d3a
-.dw $d3b,$d3c,$d3d,$d3d,$d3e,$d3f,$d40,$d40,$d41,$d42,$d42,$d43,$d44,$d45,$d45,$d46
-.dw $d47,$d48,$d49,$d49,$d4a,$d4b,$d4c,$d4c,$d4d,$d4e,$d4f,$d4f,$d50,$d51,$d52,$d53
-.dw $d53,$d54,$d55,$d56,$d56,$d57,$d58,$d59,$d5a,$d5a,$d5b,$d5c,$d5d,$d5e,$d5f,$d5f
-.dw $d60,$d61,$d62,$d63,$d63,$d64,$d65,$d66,$d67,$d68,$d68,$d69,$d6a,$d6b,$d6c,$d6d
-.dw $d6d,$d6e,$d6f,$d70,$d71,$d72,$d73,$d73,$d74,$d75,$d76,$d77,$d78,$d79,$d79,$d7a
-.dw $d7b,$d7c,$d7d,$d7e,$d7f,$d80,$d80,$d81,$d82,$d83,$d84,$d85,$d86,$d87,$d88,$d89
-.dw $d8a,$d8a,$d8b,$d8c,$d8d,$d8e,$d8f,$d90,$d91,$d92,$d93,$d94,$d95,$d95,$d96,$d97
-.dw $d98,$d99,$d9a,$d9b,$d9c,$d9d,$d9e,$d9f,$da0,$da1,$da2,$da3,$da4,$da5,$da6,$da7
-.dw $da8,$da9,$daa,$dab,$dac,$dad,$dae,$daf,$db0,$db1,$db2,$db3,$db4,$db5,$db6,$db7
-.dw $db8,$db9,$dba,$dbb,$dbc,$dbd,$dbe,$dbf,$dc0,$dc1,$dc2,$dc3,$dc4,$dc5,$dc6,$dc7
-.dw $dc8,$dc9,$dca,$dcb,$dcd,$dce,$dcf,$dd0,$dd1,$dd2,$dd3,$dd4,$dd5,$dd6,$dd7,$dd8
-.dw $dda,$ddb,$ddc,$ddd,$dde,$ddf,$de0,$de1,$de2,$de3,$de4,$de6,$de7,$de8,$de9,$dea
-.dw $deb,$ded,$dee,$def,$df0,$df1,$df2,$df3,$df5,$df6,$df7,$df8,$df9,$dfa,$dfc,$dfd
-.dw $dfe,$dff,$f00,$f00,$f01,$f02,$f02,$f03,$f03,$f04,$f05,$f05,$f06,$f07,$f07,$f08
-.dw $f08,$f09,$f0a,$f0a,$f0b,$f0b,$f0c,$f0d,$f0d,$f0e,$f0e,$f0f,$f10,$f10,$f11,$f12
-.dw $f12,$f13,$f14,$f14,$f15,$f16,$f16,$f17,$f17,$f18,$f19,$f19,$f1a,$f1b,$f1b,$f1c
-.dw $f1d,$f1d,$f1e,$f1f,$f1f,$f20,$f21,$f21,$f22,$f23,$f23,$f24,$f25,$f25,$f26,$f27
-.dw $f27,$f28,$f29,$f29,$f2a,$f2b,$f2c,$f2c,$f2d,$f2e,$f2e,$f2f,$f30,$f30,$f31,$f32
-.dw $f32,$f33,$f34,$f35,$f35,$f36,$f37,$f38,$f38,$f39,$f3a,$f3a,$f3b,$f3c,$f3d,$f3d
-.dw $f3e,$f3f,$f40,$f40,$f41,$f42,$f42,$f43
+.dw $1b3,$1b4,$1b5,$1b6,$1b7,$1b8,$1b9,$1ba,$1bb,$1bc,$1bd,$1be,$1bf,$1c0,$1c1,$1c2
+.dw $1c3,$1c4,$1c5,$1c6,$1c7,$1c8,$1c9,$1ca,$1cb,$1cc,$1cd,$1cf,$1d0,$1d1,$1d2,$1d3
+.dw $1d4,$1d5,$1d6,$1d7,$1d8,$1d9,$1db,$1dc,$1dd,$1de,$1df,$1e0,$1e1,$1e2,$1e3,$1e4
+.dw $1e6,$1e7,$1e8,$1e9,$1ea,$1eb,$1ec,$1ee,$1ef,$1f0,$1f1,$1f2,$1f3,$1f4,$1f6,$1f7
+.dw $1f8,$1f9,$1fa,$1fb,$1fd,$1fe,$1ff,$300,$301,$301,$302,$302,$303,$304,$304,$305
+.dw $305,$306,$307,$307,$308,$309,$309,$30a,$30a,$30b,$30c,$30c,$30d,$30d,$30e,$30f
+.dw $30f,$310,$311,$311,$312,$312,$313,$314,$314,$315,$316,$316,$317,$318,$318,$319
+.dw $31a,$31a,$31b,$31b,$31c,$31d,$31d,$31e,$31f,$31f,$320,$321,$321,$322,$323,$323
+.dw $324,$325,$325,$326,$327,$328,$328,$329,$32a,$32a,$32b,$32c,$32c,$32d,$32e,$32e
+.dw $32f,$330,$330,$331,$332,$333,$333,$334,$335,$335,$336,$337,$338,$338,$339,$33a
+.dw $33b,$33b,$33c,$33d,$33d,$33e,$33f,$340,$340,$341,$342,$343,$343,$344,$345,$346
+.dw $346,$347,$348,$349,$349,$34a,$34b,$34c,$34c,$34d,$34e,$34f,$350,$350,$351,$352
+.dw $353,$353,$354,$355,$356,$357,$357,$358,$359,$35a,$35b,$35b,$35c,$35d,$35e,$35f
+.dw $35f,$360,$361,$362,$363,$364,$364,$365,$366,$367,$368,$368,$369,$36a,$36b,$36c
+.dw $36d,$36d,$36e,$36f,$370,$371,$372,$373,$373,$374,$375,$376,$377,$378,$379,$37a
+.dw $37a,$37b,$37c,$37d,$37e,$37f,$380,$381,$381,$382,$383,$384,$385,$386,$387,$388
+.dw $389,$38a,$38a,$38b,$38c,$38d,$38e,$38f,$390,$391,$392,$393,$394,$395,$396,$396
+.dw $397,$398,$399,$39a,$39b,$39c,$39d,$39e,$39f,$3a0,$3a1,$3a2,$3a3,$3a4,$3a5,$3a6
+.dw $3a7,$3a8,$3a9,$3aa,$3ab,$3ac,$3ad,$3ae,$3af,$3b0,$3b1,$3b2,$3b3,$3b4,$3b5,$3b6
+.dw $3b7,$3b8,$3b9,$3ba,$3bb,$3bc,$3bd,$3be,$3bf,$3c0,$3c1,$3c2,$3c3,$3c4,$3c5,$3c6
+.dw $3c7,$3c8,$3c9,$3ca,$3cb,$3cc,$3cd,$3cf,$3d0,$3d1,$3d2,$3d3,$3d4,$3d5,$3d6,$3d7
+.dw $3d8,$3d9,$3db,$3dc,$3dd,$3de,$3df,$3e0,$3e1,$3e2,$3e3,$3e4,$3e6,$3e7,$3e8,$3e9
+.dw $3ea,$3eb,$3ec,$3ee,$3ef,$3f0,$3f1,$3f2,$3f3,$3f4,$3f6,$3f7,$3f8,$3f9,$3fa,$3fb
+.dw $3fd,$3fe,$3ff,$500,$501,$501,$502,$502,$503,$504,$504,$505,$505,$506,$507,$507
+.dw $508,$509,$509,$50a,$50a,$50b,$50c,$50c,$50d,$50d,$50e,$50f,$50f,$510,$511,$511
+.dw $512,$512,$513,$514,$514,$515,$516,$516,$517,$518,$518,$519,$51a,$51a,$51b,$51b
+.dw $51c,$51d,$51d,$51e,$51f,$51f,$520,$521,$521,$522,$523,$523,$524,$525,$525,$526
+.dw $527,$528,$528,$529,$52a,$52a,$52b,$52c,$52c,$52d,$52e,$52e,$52f,$530,$530,$531
+.dw $532,$533,$533,$534,$535,$535,$536,$537,$538,$538,$539,$53a,$53b,$53b,$53c,$53d
+.dw $53d,$53e,$53f,$540,$540,$541,$542,$543,$543,$544,$545,$546,$546,$547,$548,$549
+.dw $549,$54a,$54b,$54c,$54c,$54d,$54e,$54f,$550,$550,$551,$552,$553,$553,$554,$555
+.dw $556,$557,$557,$558,$559,$55a,$55b,$55b,$55c,$55d,$55e,$55f,$55f,$560,$561,$562
+.dw $563,$564,$564,$565,$566,$567,$568,$568,$569,$56a,$56b,$56c,$56d,$56d,$56e,$56f
+.dw $570,$571,$572,$573,$573,$574,$575,$576,$577,$578,$579,$57a,$57a,$57b,$57c,$57d
+.dw $57e,$57f,$580,$581,$581,$582,$583,$584,$585,$586,$587,$588,$589,$58a,$58a,$58b
+.dw $58c,$58d,$58e,$58f,$590,$591,$592,$593,$594,$595,$596,$596,$597,$598,$599,$59a
+.dw $59b,$59c,$59d,$59e,$59f,$5a0,$5a1,$5a2,$5a3,$5a4,$5a5,$5a6,$5a7,$5a8,$5a9,$5aa
+.dw $5ab,$5ac,$5ad,$5ae,$5af,$5b0,$5b1,$5b2,$5b3,$5b4,$5b5,$5b6,$5b7,$5b8,$5b9,$5ba
+.dw $5bb,$5bc,$5bd,$5be,$5bf,$5c0,$5c1,$5c2,$5c3,$5c4,$5c5,$5c6,$5c7,$5c8,$5c9,$5ca
+.dw $5cb,$5cc,$5cd,$5cf,$5d0,$5d1,$5d2,$5d3,$5d4,$5d5,$5d6,$5d7,$5d8,$5d9,$5db,$5dc
+.dw $5dd,$5de,$5df,$5e0,$5e1,$5e2,$5e3,$5e4,$5e6,$5e7,$5e8,$5e9,$5ea,$5eb,$5ec,$5ee
+.dw $5ef,$5f0,$5f1,$5f2,$5f3,$5f4,$5f6,$5f7,$5f8,$5f9,$5fa,$5fb,$5fd,$5fe,$5ff,$700
+.dw $701,$701,$702,$702,$703,$704,$704,$705,$705,$706,$707,$707,$708,$709,$709,$70a
+.dw $70a,$70b,$70c,$70c,$70d,$70d,$70e,$70f,$70f,$710,$711,$711,$712,$712,$713,$714
+.dw $714,$715,$716,$716,$717,$718,$718,$719,$71a,$71a,$71b,$71b,$71c,$71d,$71d,$71e
+.dw $71f,$71f,$720,$721,$721,$722,$723,$723,$724,$725,$725,$726,$727,$728,$728,$729
+.dw $72a,$72a,$72b,$72c,$72c,$72d,$72e,$72e,$72f,$730,$730,$731,$732,$733,$733,$734
+.dw $735,$735,$736,$737,$738,$738,$739,$73a,$73b,$73b,$73c,$73d,$73d,$73e,$73f,$740
+.dw $740,$741,$742,$743,$743,$744,$745,$746,$746,$747,$748,$749,$749,$74a,$74b,$74c
+.dw $74c,$74d,$74e,$74f,$750,$750,$751,$752,$753,$753,$754,$755,$756,$757,$757,$758
+.dw $759,$75a,$75b,$75b,$75c,$75d,$75e,$75f,$75f,$760,$761,$762,$763,$764,$764,$765
+.dw $766,$767,$768,$768,$769,$76a,$76b,$76c,$76d,$76d,$76e,$76f,$770,$771,$772,$773
+.dw $773,$774,$775,$776,$777,$778,$779,$77a,$77a,$77b,$77c,$77d,$77e,$77f,$780,$781
+.dw $781,$782,$783,$784,$785,$786,$787,$788,$789,$78a,$78a,$78b,$78c,$78d,$78e,$78f
+.dw $790,$791,$792,$793,$794,$795,$796,$796,$797,$798,$799,$79a,$79b,$79c,$79d,$79e
+.dw $79f,$7a0,$7a1,$7a2,$7a3,$7a4,$7a5,$7a6,$7a7,$7a8,$7a9,$7aa,$7ab,$7ac,$7ad,$7ae
+.dw $7af,$7b0,$7b1,$7b2,$7b3,$7b4,$7b5,$7b6,$7b7,$7b8,$7b9,$7ba,$7bb,$7bc,$7bd,$7be
+.dw $7bf,$7c0,$7c1,$7c2,$7c3,$7c4,$7c5,$7c6,$7c7,$7c8,$7c9,$7ca,$7cb,$7cc,$7cd,$7cf
+.dw $7d0,$7d1,$7d2,$7d3,$7d4,$7d5,$7d6,$7d7,$7d8,$7d9,$7db,$7dc,$7dd,$7de,$7df,$7e0
+.dw $7e1,$7e2,$7e3,$7e4,$7e6,$7e7,$7e8,$7e9,$7ea,$7eb,$7ec,$7ee,$7ef,$7f0,$7f1,$7f2
+.dw $7f3,$7f4,$7f6,$7f7,$7f8,$7f9,$7fa,$7fb,$7fd,$7fe,$7ff,$900,$901,$901,$902,$902
+.dw $903,$904,$904,$905,$905,$906,$907,$907,$908,$909,$909,$90a,$90a,$90b,$90c,$90c
+.dw $90d,$90d,$90e,$90f,$90f,$910,$911,$911,$912,$912,$913,$914,$914,$915,$916,$916
+.dw $917,$918,$918,$919,$91a,$91a,$91b,$91b,$91c,$91d,$91d,$91e,$91f,$91f,$920,$921
+.dw $921,$922,$923,$923,$924,$925,$925,$926,$927,$928,$928,$929,$92a,$92a,$92b,$92c
+.dw $92c,$92d,$92e,$92e,$92f,$930,$930,$931,$932,$933,$933,$934,$935,$935,$936,$937
+.dw $938,$938,$939,$93a,$93b,$93b,$93c,$93d,$93d,$93e,$93f,$940,$940,$941,$942,$943
+.dw $943,$944,$945,$946,$946,$947,$948,$949,$949,$94a,$94b,$94c,$94c,$94d,$94e,$94f
+.dw $950,$950,$951,$952,$953,$953,$954,$955,$956,$957,$957,$958,$959,$95a,$95b,$95b
+.dw $95c,$95d,$95e,$95f,$95f,$960,$961,$962,$963,$964,$964,$965,$966,$967,$968,$968
+.dw $969,$96a,$96b,$96c,$96d,$96d,$96e,$96f,$970,$971,$972,$973,$973,$974,$975,$976
+.dw $977,$978,$979,$97a,$97a,$97b,$97c,$97d,$97e,$97f,$980,$981,$981,$982,$983,$984
+.dw $985,$986,$987,$988,$989,$98a,$98a,$98b,$98c,$98d,$98e,$98f,$990,$991,$992,$993
+.dw $994,$995,$996,$996,$997,$998,$999,$99a,$99b,$99c,$99d,$99e,$99f,$9a0,$9a1,$9a2
+.dw $9a3,$9a4,$9a5,$9a6,$9a7,$9a8,$9a9,$9aa,$9ab,$9ac,$9ad,$9ae,$9af,$9b0,$9b1,$9b2
+.dw $9b3,$9b4,$9b5,$9b6,$9b7,$9b8,$9b9,$9ba,$9bb,$9bc,$9bd,$9be,$9bf,$9c0,$9c1,$9c2
+.dw $9c3,$9c4,$9c5,$9c6,$9c7,$9c8,$9c9,$9ca,$9cb,$9cc,$9cd,$9cf,$9d0,$9d1,$9d2,$9d3
+.dw $9d4,$9d5,$9d6,$9d7,$9d8,$9d9,$9db,$9dc,$9dd,$9de,$9df,$9e0,$9e1,$9e2,$9e3,$9e4
+.dw $9e6,$9e7,$9e8,$9e9,$9ea,$9eb,$9ec,$9ee,$9ef,$9f0,$9f1,$9f2,$9f3,$9f4,$9f6,$9f7
+.dw $9f8,$9f9,$9fa,$9fb,$9fd,$9fe,$9ff,$b00,$b01,$b01,$b02,$b02,$b03,$b04,$b04,$b05
+.dw $b05,$b06,$b07,$b07,$b08,$b09,$b09,$b0a,$b0a,$b0b,$b0c,$b0c,$b0d,$b0d,$b0e,$b0f
+.dw $b0f,$b10,$b11,$b11,$b12,$b12,$b13,$b14,$b14,$b15,$b16,$b16,$b17,$b18,$b18,$b19
+.dw $b1a,$b1a,$b1b,$b1b,$b1c,$b1d,$b1d,$b1e,$b1f,$b1f,$b20,$b21,$b21,$b22,$b23,$b23
+.dw $b24,$b25,$b25,$b26,$b27,$b28,$b28,$b29,$b2a,$b2a,$b2b,$b2c,$b2c,$b2d,$b2e,$b2e
+.dw $b2f,$b30,$b30,$b31,$b32,$b33,$b33,$b34,$b35,$b35,$b36,$b37,$b38,$b38,$b39,$b3a
+.dw $b3b,$b3b,$b3c,$b3d,$b3d,$b3e,$b3f,$b40,$b40,$b41,$b42,$b43,$b43,$b44,$b45,$b46
+.dw $b46,$b47,$b48,$b49,$b49,$b4a,$b4b,$b4c,$b4c,$b4d,$b4e,$b4f,$b50,$b50,$b51,$b52
+.dw $b53,$b53,$b54,$b55,$b56,$b57,$b57,$b58,$b59,$b5a,$b5b,$b5b,$b5c,$b5d,$b5e,$b5f
+.dw $b5f,$b60,$b61,$b62,$b63,$b64,$b64,$b65,$b66,$b67,$b68,$b68,$b69,$b6a,$b6b,$b6c
+.dw $b6d,$b6d,$b6e,$b6f,$b70,$b71,$b72,$b73,$b73,$b74,$b75,$b76,$b77,$b78,$b79,$b7a
+.dw $b7a,$b7b,$b7c,$b7d,$b7e,$b7f,$b80,$b81,$b81,$b82,$b83,$b84,$b85,$b86,$b87,$b88
+.dw $b89,$b8a,$b8a,$b8b,$b8c,$b8d,$b8e,$b8f,$b90,$b91,$b92,$b93,$b94,$b95,$b96,$b96
+.dw $b97,$b98,$b99,$b9a,$b9b,$b9c,$b9d,$b9e,$b9f,$ba0,$ba1,$ba2,$ba3,$ba4,$ba5,$ba6
+.dw $ba7,$ba8,$ba9,$baa,$bab,$bac,$bad,$bae,$baf,$bb0,$bb1,$bb2,$bb3,$bb4,$bb5,$bb6
+.dw $bb7,$bb8,$bb9,$bba,$bbb,$bbc,$bbd,$bbe,$bbf,$bc0,$bc1,$bc2,$bc3,$bc4,$bc5,$bc6
+.dw $bc7,$bc8,$bc9,$bca,$bcb,$bcc,$bcd,$bcf,$bd0,$bd1,$bd2,$bd3,$bd4,$bd5,$bd6,$bd7
+.dw $bd8,$bd9,$bdb,$bdc,$bdd,$bde,$bdf,$be0,$be1,$be2,$be3,$be4,$be6,$be7,$be8,$be9
+.dw $bea,$beb,$bec,$bee,$bef,$bf0,$bf1,$bf2,$bf3,$bf4,$bf6,$bf7,$bf8,$bf9,$bfa,$bfb
+.dw $bfd,$bfe,$bff,$d00,$d01,$d01,$d02,$d02,$d03,$d04,$d04,$d05,$d05,$d06,$d07,$d07
+.dw $d08,$d09,$d09,$d0a,$d0a,$d0b,$d0c,$d0c,$d0d,$d0d,$d0e,$d0f,$d0f,$d10,$d11,$d11
+.dw $d12,$d12,$d13,$d14,$d14,$d15,$d16,$d16,$d17,$d18,$d18,$d19,$d1a,$d1a,$d1b,$d1b
+.dw $d1c,$d1d,$d1d,$d1e,$d1f,$d1f,$d20,$d21,$d21,$d22,$d23,$d23,$d24,$d25,$d25,$d26
+.dw $d27,$d28,$d28,$d29,$d2a,$d2a,$d2b,$d2c,$d2c,$d2d,$d2e,$d2e,$d2f,$d30,$d30,$d31
+.dw $d32,$d33,$d33,$d34,$d35,$d35,$d36,$d37,$d38,$d38,$d39,$d3a,$d3b,$d3b,$d3c,$d3d
+.dw $d3d,$d3e,$d3f,$d40,$d40,$d41,$d42,$d43,$d43,$d44,$d45,$d46,$d46,$d47,$d48,$d49
+.dw $d49,$d4a,$d4b,$d4c,$d4c,$d4d,$d4e,$d4f,$d50,$d50,$d51,$d52,$d53,$d53,$d54,$d55
+.dw $d56,$d57,$d57,$d58,$d59,$d5a,$d5b,$d5b,$d5c,$d5d,$d5e,$d5f,$d5f,$d60,$d61,$d62
+.dw $d63,$d64,$d64,$d65,$d66,$d67,$d68,$d68,$d69,$d6a,$d6b,$d6c,$d6d,$d6d,$d6e,$d6f
+.dw $d70,$d71,$d72,$d73,$d73,$d74,$d75,$d76,$d77,$d78,$d79,$d7a,$d7a,$d7b,$d7c,$d7d
+.dw $d7e,$d7f,$d80,$d81,$d81,$d82,$d83,$d84,$d85,$d86,$d87,$d88,$d89,$d8a,$d8a,$d8b
+.dw $d8c,$d8d,$d8e,$d8f,$d90,$d91,$d92,$d93,$d94,$d95,$d96,$d96,$d97,$d98,$d99,$d9a
+.dw $d9b,$d9c,$d9d,$d9e,$d9f,$da0,$da1,$da2,$da3,$da4,$da5,$da6,$da7,$da8,$da9,$daa
+.dw $dab,$dac,$dad,$dae,$daf,$db0,$db1,$db2,$db3,$db4,$db5,$db6,$db7,$db8,$db9,$dba
+.dw $dbb,$dbc,$dbd,$dbe,$dbf,$dc0,$dc1,$dc2,$dc3,$dc4,$dc5,$dc6,$dc7,$dc8,$dc9,$dca
+.dw $dcb,$dcc,$dcd,$dcf,$dd0,$dd1,$dd2,$dd3,$dd4,$dd5,$dd6,$dd7,$dd8,$dd9,$ddb,$ddc
+.dw $ddd,$dde,$ddf,$de0,$de1,$de2,$de3,$de4,$de6,$de7,$de8,$de9,$dea,$deb,$dec,$dee
+.dw $def,$df0,$df1,$df2,$df3,$df4,$df6,$df7,$df8,$df9,$dfa,$dfb,$dfd,$dfe,$dff,$f00
+.dw $f01,$f01,$f02,$f02,$f03,$f04,$f04,$f05,$f05,$f06,$f07,$f07,$f08,$f09,$f09,$f0a
+.dw $f0a,$f0b,$f0c,$f0c,$f0d,$f0d,$f0e,$f0f,$f0f,$f10,$f11,$f11,$f12,$f12,$f13,$f14
+.dw $f14,$f15,$f16,$f16,$f17,$f18,$f18,$f19,$f1a,$f1a,$f1b,$f1b,$f1c,$f1d,$f1d,$f1e
+.dw $f1f,$f1f,$f20,$f21,$f21,$f22,$f23,$f23,$f24,$f25,$f25,$f26,$f27,$f28,$f28,$f29
+.dw $f2a,$f2a,$f2b,$f2c,$f2c,$f2d,$f2e,$f2e,$f2f,$f30,$f30,$f31,$f32,$f33,$f33,$f34
+.dw $f35,$f35,$f36,$f37,$f38,$f38,$f39,$f3a,$f3b,$f3b,$f3c,$f3d,$f3d,$f3e,$f3f,$f40
+.dw $f40,$f41,$f42,$f43,$f43,$f44,$f45,$f46
 
 .ends
 
@@ -1986,6 +1983,9 @@ Begin:
 
     ld hl, song_song
     call StartSong
+    ; Set first track to be selected (for muting/unmuting)
+    ld ix, tracks
+    set 1, [ix + Track.Status]
 
     call TurnOnScreen
     ei
@@ -2049,32 +2049,75 @@ SetUpFMRegisters:
 
 MainFunc0:
     call DrawAllChannelIndicators
-    ; check if channels should be (un)muted
-; TODO
-;    ld  a, [buttonsPressed]
-;    ld b, a
-;    ld a, [soundStatus]
-;    bit PADB_UP, b
-;    jr z, @upNotPressed
-    ; toggle channel 1
-;    xor a, 1
-;    @upNotPressed:
-;    bit PADB_DOWN, b
-;    jr z, @downNotPressed
-    ; toggle channel 2
-;    xor a, 2
-;    @downNotPressed:
-;    bit PADB_LEFT, b
-;    jr z, @leftNotPressed
-    ; toggle channel 3
-;    xor a, 4
-;    @leftNotPressed:
-;    bit PADB_RIGHT, b
-;    jr z, @rightNotPressed
-    ; toggle channel 4
-;    xor a, 8
-;    @rightNotPressed:
-;    ld [soundStatus], a
+    ; check if tracks should be (un)muted
+    ld a, [buttonsPressed]
+    or a
+    ret z
+    and a, PADF_LEFT | PADF_RIGHT | PADF_UP | PADF_DOWN
+    jr z, @skipSelectedTrackIndexUpdate
+    ; calculate new selectedTrackIndex from D-pad
+    ld b, a
+    ld a, [selectedTrackIndex]
+    bit PADB_UP, b
+    jr z, @upNotPressed
+    dec a
+    @upNotPressed:
+    bit PADB_LEFT, b
+    jr z, @leftNotPressed
+    dec a
+    @leftNotPressed:
+    bit PADB_DOWN, b
+    jr z, @downNotPressed
+    inc a
+    @downNotPressed:
+    bit PADB_RIGHT, b
+    jr z, @rightNotPressed
+    inc a
+    @rightNotPressed:
+    bit 7, a
+    jr z, @noWraparoundLow
+    ld a, MAX_TRACKS-1
+    @noWraparoundLow:
+    cp a, MAX_TRACKS
+    jr c, @noWraparoundHigh
+    xor a
+    @noWraparoundHigh:
+    ld [selectedTrackIndex], a
+    ld b, a
+    ; update selected flags
+    ld ix, tracks
+    ld de, _sizeof_Track
+    xor a
+    @loop:
+    cp a, b ; track == selectedTrackIndex?
+    res 1, [ix + Track.Status] ; speculatively reset
+    jr nz, @notSelected
+    set 1, [ix + Track.Status]
+    @notSelected:
+    add ix, de
+    inc a
+    cp a, MAX_TRACKS
+    jr nz, @loop
+    @skipSelectedTrackIndexUpdate:
+    ; check if selected track should be muted or unmuted
+    ld a, [buttonsPressed]
+    and a, PADF_A | PADF_B
+    ret z
+    ld ix, tracks
+    ld de, _sizeof_Track
+    ld a, [selectedTrackIndex]
+    ld b, a
+    xor a
+    @loop2:
+    cp a, b ; track == selectedTrackIndex?
+    jr z, @foundSelectedTrack
+    add ix, de
+    inc a
+    jr @loop2
+    @foundSelectedTrack:
+    ld a, [ix + Track.Status]
+    xor a, 1
+    ld [ix + Track.Status], a
     ret
 
 DrawAllChannelIndicators:
@@ -2157,8 +2200,7 @@ DrawChannelIndicatorsTop:
     ld [hl], a
     inc l
     @skip_separator_top:
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted_top
     ld a, 0
     jr @draw_top
@@ -2170,6 +2212,10 @@ DrawChannelIndicatorsTop:
     jr z, @draw_blank_top
     sla a ; ball size (0..7) * 4
     add a, $36
+    bit 1, [ix + Track.Status] ; should track be highlighted?
+    jr z, @skip_highlight
+    add a, $20
+    @skip_highlight:
     ld [hl], a
     inc l
     push af
@@ -2219,8 +2265,7 @@ DrawChannelIndicatorsBottom:
     ld [hl], a
     inc l
     @skip_separator_bottom:
-    ld a, [ix + Track.Status]
-    or a, a
+    bit 0, [ix + Track.Status]
     jr z, @not_muted_bottom
     ld a, 0
     jr @draw_bottom
@@ -2232,6 +2277,10 @@ DrawChannelIndicatorsBottom:
     jr z, @draw_blank_bottom
     sla a ; ball size (0..7) * 4
     add a, $37
+    bit 1, [ix + Track.Status] ; should track be highlighted?
+    jr z, @skip_highlight
+    add a, $20
+    @skip_highlight:
     ld [hl], a
     inc l
     push af
@@ -2275,21 +2324,26 @@ RGB 0, 0, 0
 RGB 0, 0, 0
 RGB 3, 3, 3
 ; 1 - flag
-RGB 3, 2, 3
+RGB 1, 1, 2
 RGB 3, 0, 0
 RGB 0, 0, 3
 RGB 3, 3, 3
 ; 2 - orb
-RGB 3, 2, 3
+RGB 1, 1, 2
 RGB 3, 2, 0
 RGB 2, 1, 1
 RGB 1, 0, 0
+; 3 - highlighted orb
+RGB 1, 1, 2
+RGB 3, 3, 1
+RGB 2, 2, 1
+RGB 1, 1, 0
 PaletteDataEnd:
 
 BGTiles:
 .incbin "font.bin"  ; $00 - 56 tiles
 .incbin "flag.bin"  ; $38 - 2 tiles
-.incbin "ball.bin"  ; $3A - 32 tiles
+.incbin "ball.bin"  ; $3A - 64 tiles
 BGTilesEnd:
 
 TilemapData:
@@ -2303,8 +2357,8 @@ TilemapData:
 .dw CHAR_R, CHAR_e, CHAR_m, CHAR_i, CHAR_x, CHAR_e, CHAR_d, CHAR_SPACE, CHAR_i, CHAR_n
 .db $3C, $68, 4
 .dw $38,$39 ; flag
-.db $3D, $14, 24
-.dw CHAR_U, CHAR_s, CHAR_e, CHAR_SPACE, CHAR_D, CHAR_MINUS, CHAR_p, CHAR_a, CHAR_d, CHAR_SPACE, CHAR_t, CHAR_o
+.db $3D, $12, 26
+.dw CHAR_U, CHAR_s, CHAR_e, CHAR_SPACE, CHAR_j, CHAR_o, CHAR_y, CHAR_p, CHAR_a, CHAR_d, CHAR_SPACE, CHAR_t, CHAR_o
 .db $3D, $50, 30
 .dw CHAR_t, CHAR_o, CHAR_g, CHAR_g, CHAR_l, CHAR_e, CHAR_SPACE, CHAR_c, CHAR_h, CHAR_a, CHAR_n, CHAR_n, CHAR_e, CHAR_l, CHAR_s
 .db 0

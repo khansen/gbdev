@@ -8,22 +8,16 @@ song_chn2_instrument_table:
 .db $00,$00,$00,$00,$00,$00 ; 1
 .dw env0
 .db $00,$00,$00,$00,$00,$00 ; 2
-.dw env0
-.db $00,$00,$00,$00,$00,$00 ; 3 triangle (infinite)
-.dw env1
-.db $00,$02,$14,$00,$00,$00 ; 4 triangle (snare)
 .dw env2
-.db $00,$00,$00,$00,$00,$00 ; 5
+.db $00,$00,$00,$00,$00,$00 ; 3
 .dw env6
-.db $00,$00,$00,$00,$00,$00 ; 6
+.db $00,$00,$00,$00,$00,$00 ; 4
 .dw env8
-.db $00,$04,$72,$00,$00,$00 ; 7
+.db $00,$04,$72,$00,$00,$00 ; 5
+.dw env1
+.db $00,$02,$18,$00,$00,$00 ; 6 triangle (snare)
 .dw env9
-.db $00,$02,$80,$00,$00,$00 ; 8 triangle (bass drum)
-.dw env10
-.db $00,$00,$00,$00,$00,$00 ; 9 triangle (short)
-.dw env11
-.db $00,$00,$00,$00,$00,$00 ; 10 triangle (short)
+.db $00,$02,$F0,$00,$00,$00 ; 7 triangle (bass drum)
 
 ; Noise channel
 song_chn3_instrument_table:
@@ -46,13 +40,45 @@ song_chn7_instrument_table:
 song_chn8_instrument_table:
 song_chn9_instrument_table:
 .dw env12
-.db $00,$00,$00,$70,$00,$00 ; 0
+.db $00,$00,$00,$70,$00,$00 ; 0 pad
 .dw env0
-.db $00,$00,$00,$60,$00,$00 ; 0
+.db $00,$00,$00,$60,$00,$00 ; 1 rough lead
+.dw env6
+.db $00,$00,$00,$60,$00,$00 ; 2 pluck lead
+.dw env13
+.db $00,$00,$00,$c0,$00,$00 ; 3 short bass
+.dw env0
+.db $00,$00,$00,$c0,$00,$00 ; 4 infinite bass
+.dw env15
+.db $00,$00,$00,$c0,$00,$00 ; 5 very short bass
+.dw env2
+.db $00,$00,$00,$50,$00,$00 ; 6 pluck bridge
+.dw env16
+.db $00,$00,$00,$70,$00,$00 ; 7 chord bridge
+.dw env0
+.db $00,$00,$00,$90,$00,$00 ; 8 soft lead
 
 env12:
-.db $10
-.db $06,$90,$FF
+.db $20
+.db $04,$80,$FF
+.db $04,$00,$00
+.db $FF,$FF
+
+env13:
+.db $F0
+.db $00,$F0,$07
+.db $30,$00,$00
+.db $FF,$FF
+
+env15:
+.db $F0
+.db $00,$F0,$04
+.db $50,$00,$00
+.db $FF,$FF
+
+env16:
+.db $E0
+.db $00,$E0,$FF
 .db $04,$00,$00
 .db $FF,$FF
 
@@ -99,7 +125,7 @@ env6:
 .db $FF,$FF
 env1:
 .db $F0
-.db $10,$00,$00
+.db $18,$00,$00
 .db $FF,$FF
 env2:
 .db $F0
@@ -111,8 +137,8 @@ env2:
 .db $10,$10,$00
 .db $FF,$FF
 env7:
-.db $70
-.db $06,$00,$00
+.db $30
+.db $04,$00,$00
 .db $FF,$FF
 env8:
 .db $E0

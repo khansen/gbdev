@@ -1,21 +1,28 @@
-def hz_to_ym2413_period(hz)
-  octave = 3
-  ((hz * (2**18) / 50000) / (2 ** (octave-1))).floor()
-end
+require 'bigdecimal'
+require 'bigdecimal/util'
 
 def find_optimal_fnum(hz)
+  min_error = nil
   best_fnum = nil
   best_octave = nil
 
+  clock  = 3579545.to_d
+  base   = (clock / 72).to_d 
+  factor = (2 ** 18).to_d 
   # Try different octaves (0 to 7)
   (0..7).each do |octave|
-    fnum = ((hz * (2**18) / 50000) / (2 ** (octave-1))).floor
+    scale  = (2.to_d ** (octave.to_d - 1)).to_d
+    fnum = ((hz * factor) / base / scale).round
 
-    # Ensure fnum is within valid range (0-511)
-    if fnum.between?(0, 511)
+    next unless fnum.between?(0, 511)
+
+    actual_hz = (fnum * scale * base) / factor
+    error = (actual_hz - hz).abs
+
+    if min_error.nil? || error < min_error
+      min_error = error
       best_fnum = fnum
       best_octave = octave
-      break  # Stop at the first valid octave
     end
   end
 
@@ -25,6 +32,10 @@ def find_optimal_fnum(hz)
   reg_10 = best_fnum & 0xFF  # Lower 8 bits of fnum
   reg_20 = ((best_fnum >> 8) & 0x01) | (best_octave << 1)  # Upper bit of fnum + octave (bits 1-3)
 
+#  puts "freq: %f" % hz
+#  puts "fnum: %d" % best_fnum
+#  puts "best octave: %d" % best_octave
+#  puts "min error: %f" % min_error
   {
     frequency: hz,
     fnum: best_fnum,
@@ -35,13 +46,13 @@ def find_optimal_fnum(hz)
 end
 
 notes_in_hz = [
-41.20,43.65,46.25,49.00,51.91,55.00,58.27,61.74,
-65.41,69.30,73.42,77.78,82.41,87.31,92.50,98.00,103.83,110.0,116.54,123.47,
-130.81,138.59,146.83,155.56,164.81,174.61,185.0,196.0,207.65,220.0,233.08,246.94,
-261.63,277.18,293.66,311.13,329.63,349.23,369.99,392.0,415.3,440.0,466.16,493.88,
-523.25,554.37,587.33,622.25,659.25,698.46,739.99,783.99,830.61,880.0,932.33,987.77,
-1046.5,1108.73,1174.66,1244.51,1318.51,1396.91,1479.98,1567.98,1661.22,1760,1864.66,1975.53,
-2093,2217.46,2349.32,2489.02,2637.02,2793.83,2959.96,3135.96,3322.44,3520,3729.31,3951.07,
+                                      41.2034, 43.6535, 46.2493, 48.9994, 51.9131, 55.0,     58.2705, 61.7354,
+  65.4064, 69.2957, 73.4162, 77.7817, 82.4069, 87.3071, 92.4986, 97.9989, 103.8262, 110.0,   116.5409, 123.4708,
+  130.8128, 138.5913, 146.8324, 155.5635, 164.8138, 174.6141, 184.9972, 195.9977, 207.6523,  220.0,    233.0819, 246.9417,
+  261.6256, 277.1826, 293.6648, 311.1270, 329.6276, 349.2282, 369.9944, 391.9954, 415.3047,  440.0,    466.1638, 493.8833,
+  523.2511, 554.3653, 587.3295, 622.2540, 659.2551, 698.4565, 739.9888, 783.9909, 830.6094,  880.0,    932.3275, 987.7666,
+  1046.5023,1108.7305,1174.6591,1244.5079,1318.5102,1396.9129,1479.9777,1567.9817,1661.2188,1760.0,   1864.6550,1975.5332,
+  2093.0045,2217.4610,2349.3181,2489.0159,2637.0205,2793.8259,2959.9554,3135.9635,3322.4376,3520.0,   3729.3101,3951.0664
 ]
 
 PERIOD_BITS = 11
@@ -65,13 +76,13 @@ period_hz_values = (0..((notes_in_hz.length - 1) * steps_per_note)).map do |peri
 end
 
 note_fnums = period_hz_values.map{|hz| find_optimal_fnum(hz)}
-puts "PeriodToReg1x2xValues:"
+puts "PeriodToFMReg1x2xValues:"
 note_fnums.each_slice(16) do |slice|
   puts ".dw %s" % (slice.map{|result| "$%03x" % ((result[:reg_20] << 8) | result[:reg_10])}.join(','))
 end
 
 note_to_period_table = (0..(notes_in_hz.length - 1)).map{|note| note * steps_per_note }
-puts "NoteToPeriod:"
+puts "NoteToFMPeriod:"
 note_to_period_table.each_slice(16) do |slice|
   puts ".dw %s" % (slice.map{|period| "%d" % period}.join(','))
 end
