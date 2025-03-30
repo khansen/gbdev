@@ -414,22 +414,19 @@ StartSong:
     inc hl
     ld [trackHeaderTable], hl
     ld b, MAX_TRACKS
-    ld de, tracks + Track.Order_Pos
+    ld ix, tracks
+    ld de, _sizeof_Track
     @loop:
     xor a, a
-    ld [de], a ; Order_Pos
-    inc e ; Effect_Kind
-    ld [de], a ; Effect_Kind
-    dec e ; Order_Pos
-    dec e ; Pattern_Ptr (hi)
-    dec e ; Pattern_Ptr (lo)
-    dec e ; Pattern_RowStatus
-    dec e ; Pattern_Row
-    ld [de], a ; Pattern_Row
-    dec e ; Pattern_RowCount
+    ld [ix + Track.Order_Pos], a
+    ld [ix + Track.Effect_Kind], a
+    ld [ix + Track.Pattern_Row], a
+    ld [ix + Track.PeriodIndex], a
+    ld [ix + Track.PeriodLo], a
+    ld [ix + Track.PeriodHi], a
+    ld [ix + Track.Envelope_Phase], a
     inc a ; 1
-    ld [de], a ; Pattern_RowCount
-    dec e ; Tick
+    ld [ix + Track.Pattern_RowCount], a
     ld a, [hl] ; order table (lo)
     inc hl
     or a, [hl] ; order table (hi)
@@ -438,37 +435,18 @@ StartSong:
     ld a, $ff ; speed ff signals to play routine that track is unused
     @2:
     dec a ; speed - 1
-    ld [de], a ; Tick
-    dec e ; Speed
+    ld [ix + Track.Tick], a
     inc a ; speed
-    ld [de], a ; Speed
-    ld a, e
-    add a, Track.MasterVol - Track.Speed
-    ld e, a
+    ld [ix + Track.Speed], a
     ld a, $f0
-    ld [de], a ; MasterVol
-    inc e
-    xor a, a
-    ld [de], a ; PeriodIndex
-    inc e
-    ld [de], a ; PeriodLo
-    inc e
-    ld [de], a ; PeriodHi
-    inc e ; InstrumentData
-    inc e ; Envelope_Phase
-    ld [de], a ; Envelope_Phase
-    ld a, e
-    add a, _sizeof_Track - Track.Envelope_Phase + Track.Order_Pos
-    ld e, a
-    jr nc, @1
-    inc d
-    @1:
+    ld [ix + Track.MasterVol], a
     ld a, l
     add a, _sizeof_TrackHeader - 1
     ld l, a
     jr nc, @3
     inc h
     @3:
+    add ix, de
     dec b
     jr nz, @loop
 
