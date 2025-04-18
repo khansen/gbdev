@@ -1432,7 +1432,7 @@ EffectTick:
     sub a, c
     ld [ix + Track.PeriodLo], a
     jr nc, @slide_skip_dec
-    ld a, [ix + Track.PeriodLo]
+    ld a, [ix + Track.PeriodHi]
     or a
     jr z, @clamp_slide_up
     dec [ix + Track.PeriodHi]
