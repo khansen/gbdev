@@ -110,10 +110,6 @@ banks 1
     Envelope_Hold db                          ; 19
     EffectiveVol db                           ; 1A
     Status db                                 ; 1B
-    Pad0 db                                   ; 1C
-    Pad1 db                                   ; 1D
-    Pad2 db                                   ; 1E
-    Pad3 db                                   ; 1F
 .ENDST
 
 .define MAX_TRACKS 13 ; 4 PSG + 9 FM
