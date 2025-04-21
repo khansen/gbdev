@@ -678,3 +678,4 @@ and the representation of frequencies.
 ## Useful resources
 
 - https://www.smspower.org/maxim/Documents/YM2413ApplicationManual
+- https://www.smspower.org/Development/YM2413
