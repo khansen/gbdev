@@ -1,0 +1,24 @@
+# Square channels
+source:0x11 target:0 transpose:-27
+source:0x26 target:1 transpose:-39
+source:0x25 target:2 transpose:-48
+# Noise channel
+source:0x31 target:0 transpose:-40
+source:0x32 target:1 transpose:-40
+source:0x33 target:2 transpose:-40
+source:0x34 target:3 transpose:-20
+source:0x35 target:4 transpose:-40
+# Melodic FM channels
+source:0x22 target:0 transpose:-34
+source:0x21 target:1 transpose:-34
+source:0x24 target:2 transpose:-34
+source:0x14 target:3 transpose:-22
+source:0x15 target:4 transpose:-22
+source:0x23 target:5 transpose:-34
+source:0x16 target:6 transpose:-22
+# Rhythm FM channels
+source:0x39 target:0
+source:0x3A target:1
+source:0x3B target:2
+source:0x3C target:3
+source:0x3D target:4
