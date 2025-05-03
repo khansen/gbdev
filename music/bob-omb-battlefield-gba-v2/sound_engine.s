@@ -829,8 +829,6 @@ update_sound__pattern_fetch_loop:
     beq update_sound__pattern_fetch_loop @ effect = 0 --> no parameter byte
     ldrb r3, [r2], #1
     strb r3, [r0, #TRACK_EFFECT_PARAM_BYTE]
-    eor r3, r3, r3
-    strb r3, [r0, #TRACK_EFFECT_POS_BYTE]
     b update_sound__pattern_fetch_loop
 update_sound__is_note:
     str r2, [r0, #TRACK_PATTERN_PTR_WORD]

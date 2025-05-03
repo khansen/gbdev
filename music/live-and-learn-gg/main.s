@@ -655,10 +655,6 @@ UpdateSound:
     ld a, [de] ; pattern byte: effect param
     inc de
     ld [hl], a ; Effect_Param
-    inc l
-    ; clear effect state
-    xor a, a
-    ld [hl], a ; Effect_Pos
     @skip_effect_init:
     pop hl ; Pattern_Ptr (lo)
     jr @pattern_fetch_loop

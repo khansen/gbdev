@@ -618,9 +618,6 @@ UpdateSound:
     ld a, [de] ; pattern byte: effect param
     inc de
     ld [ix + Track.Effect_Param], a
-    ; clear effect state
-    xor a, a
-    ld [ix + Track.Effect_Pos], a
     @skip_effect_init:
     jr @pattern_fetch_loop
     @is_set_instrument_command:
