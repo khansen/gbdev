@@ -290,8 +290,10 @@ update_sound__check_row_status:
     bcc update_sound__mixer_tick
 update_sound__pattern_fetch_loop:
     ldrb r3, [r2], #1 @ fetch pattern byte
-    cmp r3, #0xc0
+    cmp r3, #0xb0
     bcc update_sound__is_note
+    cmp r3, #0xc0
+    bcc update_sound__is_set_instrument_command
     cmp r3, #0xd0
     bcc update_sound__is_set_speed_command
     cmp r3, #0xe0
@@ -339,6 +341,10 @@ update_sound__is_note:
     orr r3, r3, r2 @ copy initial counter to current counter
     strb r3, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
     b update_sound__mixer_tick
+update_sound__is_set_instrument_command:
+    and r3, r3, #0x0f @ instrument in lower 4 bits
+    bl set_instrument
+    b update_sound__pattern_fetch_loop
 update_sound__is_set_speed_command:
     and r3, r3, #0x0f @ new speed - 1
     add r3, r3, #1
@@ -943,6 +949,23 @@ envelope_sustain:
     1: @ keep_sustaining
     bx lr
 
+@ r3 = new instrument
+@ r4 is destroyed
+set_instrument:
+    lsl r3, r3, #3 @ each instrument is 8 bytes long
+    ldr r4, =instrument_table_ptr
+    ldr r4, [r4]
+    add r4, r4, r3
+    ldr r3, [r4, #INSTRUMENT_ENVELOPE_PTR_WORD]
+    str r3, [r0, #TRACK_ENVELOPE_PTR_WORD]
+    ldrb r3, [r4, #INSTRUMENT_EFFECT_KIND_BYTE]
+    strb r3, [r0, #TRACK_EFFECT_KIND_BYTE]
+    ldrb r3, [r4, #INSTRUMENT_EFFECT_PARAM_BYTE]
+    strb r3, [r0, #TRACK_EFFECT_PARAM_BYTE]
+    ldrb r3, [r4, #INSTRUMENT_SQUARE_DUTYCTRL_BYTE]
+    strb r3, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
+    bx lr
+
 @ r3 = new speed
 @ r0 is destroyed
 set_speed:
@@ -971,18 +994,9 @@ go_pattern_command:
 set_instr_command:
     pop {r0, r1}
     ldrb r3, [r2], #1 @ instrument
-    lsl r3, r3, #3 @ each instrument is 8 bytes long
-    ldr r4, =instrument_table_ptr
-    ldr r4, [r4]
-    add r4, r4, r3
-    ldr r3, [r4, #INSTRUMENT_ENVELOPE_PTR_WORD]
-    str r3, [r0, #TRACK_ENVELOPE_PTR_WORD]
-    ldrb r3, [r4, #INSTRUMENT_EFFECT_KIND_BYTE]
-    strb r3, [r0, #TRACK_EFFECT_KIND_BYTE]
-    ldrb r3, [r4, #INSTRUMENT_EFFECT_PARAM_BYTE]
-    strb r3, [r0, #TRACK_EFFECT_PARAM_BYTE]
-    ldrb r3, [r4, #INSTRUMENT_SQUARE_DUTYCTRL_BYTE]
-    strb r3, [r0, #TRACK_SQUARE_DUTYCTRL_BYTE]
+    push {lr}
+    bl set_instrument
+    pop {lr}
     orrs r3, r3, #0 @ set carry to keep processing pattern data
     bx lr
 
