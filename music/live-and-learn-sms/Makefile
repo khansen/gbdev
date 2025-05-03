@@ -6,7 +6,7 @@ LDFLAGS = -S
 OFILES = main.o
 OUT = LiveAndLearn.sms
 
-all: $(OFILES) Makefile linkfile
+$(OUT): $(OFILES) Makefile linkfile
 	$(LD) $(LDFLAGS) linkfile $(OUT)
 
 main.o: main.s ball.bin flag.bin font.bin song.s song.inc
