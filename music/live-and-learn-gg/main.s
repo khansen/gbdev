@@ -1254,7 +1254,6 @@ EffectTick:
     ret
     @clamp_slide_up:
     dec l ; PeriodLo
-    xor a
     ld [hl], a ; PeriodLo
     pop hl ; Effect_Param
     ret
