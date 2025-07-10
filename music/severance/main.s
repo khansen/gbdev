@@ -151,7 +151,7 @@ hRendererFirstStripTileCount: db
 hRendererTilesLeft: db
 hRendererRequestFlags: db
 ; public (stuff that must be set up by user)
-hRendererMetatilePtrTable: dw
+hRendererMetatilesTable: dw
 hRendererMetatileAttribsPtrTable: dw
 hRendererMetatileBehaviorsTable: dw
 hRendererMap: dw ; room pointers
@@ -2698,9 +2698,9 @@ SetRendererData:
     ldh [hMapObjects+1], a
 
     ld a, [hli] ; metatiles (low)
-    ldh [hRendererMetatilePtrTable], a
+    ldh [hRendererMetatilesTable], a
     ld a, [hli] ; metatiles (high)
-    ldh [hRendererMetatilePtrTable+1], a
+    ldh [hRendererMetatilesTable+1], a
 
     ld a, [hli] ; metatile attribs (low)
     ldh [hRendererMetatileAttribsPtrTable], a
@@ -3306,24 +3306,33 @@ GetRoomObjectsPtr:
 ; A = metatile #
 ; Returns: DE = pointer to metatile data
 macro SetMetatilePtr
-    sla a
+    ; multiply A by 16 and store result in DE
+    swap a
     ld e, a
-    ldh a, [hRendererMetatilePtrTable+1]
-    adc a, 0
+    and a, $f
     ld d, a
-    ldh a, [hRendererMetatilePtrTable]
+    ld a, e
+    and a, $f0
+    ld e, a
+; --- begin alternative implementation that uses standard Z80 instructions ---
+;    ld e, a
+;    ld d, 0
+;    rlc e
+;    rl d
+;    rlc e
+;    rl d
+;    rlc e
+;    rl d
+;    rlc e
+;    rl d
+; --- end alternative implementation that uses standard Z80 instructions ---
+    ; add table pointer
+    ld a, [hRendererMetatilesTable]
     add a, e
     ld e, a
-    jr nc, .skip_inc_d_2
-    inc d
-    .skip_inc_d_2:
-    ld a, [de] ; metatile ptr (low)
-    push af
-    inc de
-    ld a, [de] ; metatile ptr (high)
+    ld a, [hRendererMetatilesTable+1]
+    adc a, d
     ld d, a
-    pop af
-    ld e, a
 endm
 
 ; A = metatile #
@@ -4093,29 +4102,24 @@ Align64
 .room_od_objects:
     db $ff
 
-.severance_metatiles:
-    dw .meta_floor1
-    dw .meta_wall1
-    dw .meta_floor2
-    dw .meta_wall2
-
 Align16
-.meta_floor1:
+.severance_metatiles:
+;.meta_floor1:
     db $01,$01,$01,$01
     db $01,$01,$01,$01
     db $01,$01,$01,$01
     db $01,$01,$01,$01
-.meta_wall1:
+;.meta_wall1:
     db $02,$02,$02,$03
     db $01,$01,$01,$04
     db $01,$01,$01,$04
     db $01,$01,$01,$04
-.meta_floor2:
+;.meta_floor2:
     db $05,$05,$05,$05
     db $05,$05,$05,$05
     db $01,$01,$01,$01
     db $01,$01,$01,$01
-.meta_wall2:
+;.meta_wall2:
     db $02,$02,$02,$03
     db $01,$01,$01,$04
     db $01,$01,$01,$04
