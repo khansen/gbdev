@@ -2800,7 +2800,7 @@ ResetScroller:
     ld a, c
     ldh [hScrollerWorldViewX+1], a
     call ResetRenderer
-    ld a, 16
+    ld a, 8
     ldh [hScrollerWorldViewY], a
     ldh [hScrollerWorldViewX], a
     ret
@@ -2820,7 +2820,7 @@ ResetRenderer:
 ; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
 TryScrollUp:
     ldh a, [hScrollerWorldViewY]
-    cp a, 16
+    cp a, 8
     jr nz, .canScroll
     ; check if allowed to scroll any further
     ldh a, [hScrollerWorldViewY+1]
@@ -2833,6 +2833,10 @@ TryScrollUp:
     ccf
     ret
 .canScroll:
+    and a, 7
+    jr nz, .noTilemapUpdate
+    call RequestRenderUp
+.noTilemapUpdate:
     ldh a, [hScrollerWorldViewY]
     or a, a
     jr nz, .noPageWrap
@@ -2845,9 +2849,10 @@ TryScrollUp:
     dec a
     ldh [hScrollerWorldViewY], a
     and a, 7
-    jr nz, .noTilemapUpdate
-    call RequestRenderUp
-.noTilemapUpdate:
+    cp a, 7
+    jr nz, .noRendererRoomRowUpdate
+    call RecedeRendererRoomRow
+    .noRendererRoomRowUpdate:
     scf
     ret
 
@@ -2883,7 +2888,12 @@ TryScrollDown:
     ldh a, [hScrollerWorldViewY+1]
     inc a
     ldh [hScrollerWorldViewY+1], a
+    ldh a, [hScrollerWorldViewY]
 .noPageWrap:
+    and a, 7
+    jr nz, .noRendererRoomRowUpdate
+    call AdvanceRendererRoomRow
+    .noRendererRoomRowUpdate:
     scf
     ret
 
@@ -2891,7 +2901,7 @@ TryScrollDown:
 ; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
 TryScrollLeft:
     ldh a, [hScrollerWorldViewX]
-    cp a, 16
+    cp a, 8
     jr nz, .canScroll
     ; check if allowed to scroll any further
     ldh a, [hScrollerWorldViewX+1]
@@ -2904,6 +2914,10 @@ TryScrollLeft:
     ccf
     ret
 .canScroll:
+    and a, 7
+    jr nz, .noTilemapUpdate
+    call RequestRenderLeft
+.noTilemapUpdate:
     ldh a, [hScrollerWorldViewX]
     or a, a
     jr nz, .noPageWrap
@@ -2916,9 +2930,10 @@ TryScrollLeft:
     dec a
     ldh [hScrollerWorldViewX], a
     and a, 7
-    jr nz, .noTilemapUpdate
-    call RequestRenderLeft
-.noTilemapUpdate:
+    cp a, 7
+    jr nz, .noRendererRoomColUpdate
+    call RecedeRendererRoomCol
+    .noRendererRoomColUpdate:
     scf
     ret
 
@@ -2954,7 +2969,12 @@ TryScrollRight:
     ldh a, [hScrollerWorldViewX+1]
     inc a
     ldh [hScrollerWorldViewX+1], a
+    ldh a, [hScrollerWorldViewX]
 .noPageWrap:
+    and a, 7
+    jr nz, .noRendererRoomColUpdate
+    call AdvanceRendererRoomCol
+    .noRendererRoomColUpdate:
     scf
     ret
 
@@ -2989,14 +3009,16 @@ GetRoomOffset:
     ret
 
 RenderScreen:
-    ld a, 23
+    ld a, 22+1
 .loop:
     push af
     call RenderRight
     call FlushVramBuffers
+    call AdvanceRendererRoomCol
     pop af
     dec a
     jr nz, .loop
+    call RecedeRendererRoomCol
     ret
 
 DEF RENDER_DOWN_REQUEST_BIT EQU 7
@@ -3059,25 +3081,11 @@ ProcessRendererRequests:
     jp RenderDown
 
 RenderUp:
-; move to previous row
-    ldh a, [hRendererRoomRow]
-    dec a
-    and a, 31
-    ldh [hRendererRoomRow], a
-    cp a, 31
-    jr nz, .noVerticalRoomWrap
-; move to previous room
-    ldh a, [hRendererMapWidth]
-    ld c, a
-    ldh a, [hRendererMapOffset]
-    sub a, c
-    ldh [hRendererMapOffset], a
-.noVerticalRoomWrap:
 ; prepare state
     ldh a, [hRendererMapOffset]
     ldh [hRendererSaveMapOffset], a
     ldh a, [hRendererRoomCol]
-    sub a, 23
+    sub a, 22
     push af
     and a, 31
     ldh [hRendererRoomCol], a
@@ -3103,11 +3111,27 @@ RenderUp:
 .skipAttributeTableUpdate:
 ; restore state
     ldh a, [hRendererRoomCol]
-    add a, 23
+    add a, 22
     and a, 31
     ldh [hRendererRoomCol], a
     ldh a, [hRendererSaveMapOffset]
     ldh [hRendererMapOffset], a
+    ret
+
+RecedeRendererRoomRow:
+    ldh a, [hRendererRoomRow]
+    dec a
+    and a, 31
+    ldh [hRendererRoomRow], a
+    cp a, 31
+    jr nz, .noVerticalRoomWrap
+; move to previous room
+    ldh a, [hRendererMapWidth]
+    ld c, a
+    ldh a, [hRendererMapOffset]
+    sub a, c
+    ldh [hRendererMapOffset], a
+.noVerticalRoomWrap:
     ret
 
 RenderDown:
@@ -3115,7 +3139,7 @@ RenderDown:
     ldh a, [hRendererMapOffset]
     ldh [hRendererSaveMapOffset], a
     ldh a, [hRendererRoomCol]
-    sub a, 23
+    sub a, 22
     push af
     and a, 31
     ldh [hRendererRoomCol], a
@@ -3126,7 +3150,7 @@ RenderDown:
     ldh [hRendererMapOffset], a
 .noHorizontalRoomWrap:
     ldh a, [hRendererRoomRow]
-    add a, 21
+    add a, 20
     cp a, 32
     push af
     and a, 31
@@ -3155,16 +3179,18 @@ RenderDown:
 .skipAttributeTableUpdate:
 ; restore state
     ldh a, [hRendererRoomCol]
-    add a, 23
+    add a, 22
     and a, 31
     ldh [hRendererRoomCol], a
     ldh a, [hRendererRoomRow]
-    sub a, 21
+    sub a, 20
     and a, 31
     ldh [hRendererRoomRow], a
     ldh a, [hRendererSaveMapOffset]
     ldh [hRendererMapOffset], a
-; advance to next row
+    ret
+
+AdvanceRendererRoomRow:
     ldh a, [hRendererRoomRow]
     inc a
     and a, 31
@@ -3183,7 +3209,7 @@ RenderLeft:
     ldh a, [hRendererMapOffset]
     ldh [hRendererSaveMapOffset], a
     ldh a, [hRendererRoomCol]
-    sub a, $18
+    sub a, 22
     push af
     and a, 31
     ldh [hRendererRoomCol], a
@@ -3205,11 +3231,18 @@ RenderLeft:
     call SyncRendererRoomOffset
     call RenderAttribTableCol
 .skipAttributeTableUpdate:
-; move to previous column
+; restore state
+    ldh a, [hRendererRoomCol]
+    add a, 22
+    and a, 31
+    ldh [hRendererRoomCol], a
     ldh a, [hRendererSaveMapOffset]
     ldh [hRendererMapOffset], a
+    ret
+
+RecedeRendererRoomCol:
     ldh a, [hRendererRoomCol]
-    add a, $18 - 1
+    dec a
     and a, 31
     ldh [hRendererRoomCol], a
     cp a, 31
@@ -3235,7 +3268,9 @@ RenderRight:
     call SyncRendererRoomOffset
     call RenderAttribTableCol
 .skipAttributeTableUpdate:
-; advance to next column
+    ret
+
+AdvanceRendererRoomCol:
     ldh a, [hRendererRoomCol]
     inc a
     and a, 31
@@ -3399,9 +3434,9 @@ RenderNameTableCol:
     ld b, a
     ld a, 32
     sub a, b
-    cp a, 21
+    cp a, 20+1
     jr c, .two_strips
-    ld a, 21
+    ld a, 20+1
     .two_strips:
     ldh [hRendererFirstStripTileCount], a
     ldh [hRendererTilesLeft], a
@@ -3485,11 +3520,11 @@ RenderNameTableCol:
     .strip_done:
 ; done rendering strip
     ldh a, [hRendererFirstStripTileCount]
-    cp a, 21
+    cp a, 20+1
     jr z, .column_done   ; exit if no more bytes to write
 ; prepare to write second strip
     ld b, a
-    ld a, 21
+    ld a, 20+1
     ldh [hRendererFirstStripTileCount], a
     sub a, b
     ldh [hRendererTilesLeft], a
@@ -3525,9 +3560,9 @@ RenderAttribTableCol:
     ld b, a
     ld a, 32
     sub a, b
-    cp a, 21
+    cp a, 20+1
     jr c, .two_strips
-    ld a, 21
+    ld a, 20+1
     .two_strips:
     ldh [hRendererFirstStripTileCount], a
     ldh [hRendererTilesLeft], a
@@ -3611,11 +3646,11 @@ RenderAttribTableCol:
     .strip_done:
 ; done rendering strip
     ldh a, [hRendererFirstStripTileCount]
-    cp a, 21
+    cp a, 20+1
     jr z, .column_done   ; exit if no more bytes to write
 ; prepare to write second strip
     ld b, a
-    ld a, 21
+    ld a, 20+1
     ldh [hRendererFirstStripTileCount], a
     sub a, b
     ldh [hRendererTilesLeft], a
@@ -3651,9 +3686,9 @@ RenderNameTableRow:
     ld b, a
     ld a, 32
     sub a, b
-    cp a, 23
+    cp a, 22+1
     jr c, .two_strips
-    ld a, 23
+    ld a, 22+1
     .two_strips:
     ldh [hRendererFirstStripTileCount], a
     ldh [hRendererTilesLeft], a
@@ -3735,11 +3770,11 @@ RenderNameTableRow:
     .strip_done:
 ; done rendering strip
     ldh a, [hRendererFirstStripTileCount]
-    cp a, 23
+    cp a, 22+1
     jr z, .row_done   ; exit if no more bytes to write
 ; prepare to write second strip
     ld b, a
-    ld a, 23
+    ld a, 22+1
     ldh [hRendererFirstStripTileCount], a
     sub a, b
     ldh [hRendererTilesLeft], a
@@ -3775,9 +3810,9 @@ RenderAttribTableRow:
     ld b, a
     ld a, 32
     sub a, b
-    cp a, 23
+    cp a, 22+1
     jr c, .two_strips
-    ld a, 23
+    ld a, 22+1
     .two_strips:
     ldh [hRendererFirstStripTileCount], a
     ldh [hRendererTilesLeft], a
@@ -3859,11 +3894,11 @@ RenderAttribTableRow:
     .strip_done:
 ; done rendering strip
     ldh a, [hRendererFirstStripTileCount]
-    cp a, 23
+    cp a, 22+1
     jr z, .row_done   ; exit if no more bytes to write
 ; prepare to write second strip
     ld b, a
-    ld a, 23
+    ld a, 22+1
     ldh [hRendererFirstStripTileCount], a
     sub a, b
     ldh [hRendererTilesLeft], a
