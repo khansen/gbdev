@@ -2816,7 +2816,9 @@ ResetRenderer:
     ldh [hRendererRequestFlags], a
     ret
 
-ScrollUp:
+; Attempts to scroll one pixel up.
+; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
+TryScrollUp:
     ldh a, [hScrollerWorldViewY]
     cp a, 16
     jr nz, .canScroll
@@ -2827,6 +2829,8 @@ ScrollUp:
     ldh a, [hScrollerWorldViewY]
     jr .canScroll
 .reachedEndOfMap:
+    scf
+    ccf
     ret
 .canScroll:
     ldh a, [hScrollerWorldViewY]
@@ -2844,9 +2848,12 @@ ScrollUp:
     jr nz, .noTilemapUpdate
     call RequestRenderUp
 .noTilemapUpdate:
+    scf
     ret
 
-ScrollDown:
+; Attempts to scroll one pixel down.
+; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
+TryScrollDown:
     ldh a, [hScrollerWorldViewY]
     cp a, 256-144-8
     jr nz, .canScroll
@@ -2860,6 +2867,8 @@ ScrollDown:
     ldh a, [hScrollerWorldViewY]
     jr .canScroll
 .reachedEndOfMap:
+    scf
+    ccf
     ret
 .canScroll:
     and a, 7
@@ -2875,9 +2884,12 @@ ScrollDown:
     inc a
     ldh [hScrollerWorldViewY+1], a
 .noPageWrap:
+    scf
     ret
 
-ScrollLeft:
+; Attempts to scroll one pixel left.
+; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
+TryScrollLeft:
     ldh a, [hScrollerWorldViewX]
     cp a, 16
     jr nz, .canScroll
@@ -2888,6 +2900,8 @@ ScrollLeft:
     ldh a, [hScrollerWorldViewX]
     jr .canScroll
 .reachedEndOfMap:
+    scf
+    ccf
     ret
 .canScroll:
     ldh a, [hScrollerWorldViewX]
@@ -2905,9 +2919,12 @@ ScrollLeft:
     jr nz, .noTilemapUpdate
     call RequestRenderLeft
 .noTilemapUpdate:
+    scf
     ret
 
-ScrollRight:
+; Attempts to scroll one pixel right.
+; Returns: CF = 1 if scrolling was successful, CF = 0 otherwise.
+TryScrollRight:
     ldh a, [hScrollerWorldViewX]
     cp a, 256-160-8
     jr nz, .canScroll
@@ -2921,6 +2938,8 @@ ScrollRight:
     ldh a, [hScrollerWorldViewX]
     jr .canScroll
 .reachedEndOfMap:
+    scf
+    ccf
     ret
 .canScroll:
     and a, 7
@@ -2936,6 +2955,7 @@ ScrollRight:
     inc a
     ldh [hScrollerWorldViewX+1], a
 .noPageWrap:
+    scf
     ret
 
 ; Gets map offset given a pair of (X, Y) coordinates: Y * mapwidth + X
@@ -4151,11 +4171,11 @@ dw MainFunc1
 MainFunc0:
     call HideAllSprites
     call UpdatePlayer
-    call UpdateObjects
-    call ProcessPlayerPageWrapFlags
     call ConvertPlayerWorldPositionToScreenPosition
-    call RenderPlayer
     call CenterCameraOnPlayer
+    call UpdateObjects
+    call RenderPlayer
+    call ProcessPlayerPageWrapFlags
     call ProcessRendererRequests
 ; sync scroll registers
     ldh a, [hScrollerWorldViewY]
@@ -5063,19 +5083,9 @@ ConvertObjectWorldPositionToScreenPosition:
 ; Converts the player's world position to the screen position.
 ; Returns screen position in hPlayerScreenX and hPlayerScreenY
 ConvertPlayerWorldPositionToScreenPosition:
-    ; ScreenX
-    ldh a, [hScrollerWorldViewX]
-    ld c, a
-    ldh a, [hPlayerWorldX]
-    sub a, c
-    ldh [hPlayerScreenX], a
-    ld e, a
-    ldh a, [hScrollerWorldViewX+1]
-    ld c, a
-    ldh a, [hPlayerWorldX+1]
-    sbc a, c
-    ldh [hPlayerScreenX+1], a
-    ; ScreenY
+    call ConvertPlayerWorldXToScreenX
+    ; fallthrough
+ConvertPlayerWorldYToScreenY:
     ldh a, [hScrollerWorldViewY]
     ld c, a
     ldh a, [hPlayerWorldY]
@@ -5087,6 +5097,20 @@ ConvertPlayerWorldPositionToScreenPosition:
     ldh a, [hPlayerWorldY+1]
     sbc a, c
     ldh [hPlayerScreenY+1], a
+    ret
+
+ConvertPlayerWorldXToScreenX:
+    ldh a, [hScrollerWorldViewX]
+    ld c, a
+    ldh a, [hPlayerWorldX]
+    sub a, c
+    ldh [hPlayerScreenX], a
+    ld e, a
+    ldh a, [hScrollerWorldViewX+1]
+    ld c, a
+    ldh a, [hPlayerWorldX+1]
+    sbc a, c
+    ldh [hPlayerScreenX+1], a
     ret
 
 ; Only call this when the screen is off.
@@ -5128,9 +5152,13 @@ CenterCameraOnPlayerXAxis:
     ret z
     jr c, .scrollLeft
 .scrollRight:
-    jp ScrollRight
+    call TryScrollRight
+    ret nc
+    jp ConvertPlayerWorldXToScreenX
 .scrollLeft:
-    jp ScrollLeft
+    call TryScrollLeft
+    ret nc
+    jp ConvertPlayerWorldXToScreenX
 .onDifferentPage:
     bit 7, a
     jr nz, .scrollLeft
@@ -5145,9 +5173,13 @@ CenterCameraOnPlayerYAxis:
     ret z
     jr c, .scrollUp
 .scrollDown:
-    jp ScrollDown
+    call TryScrollDown
+    ret nc
+    jp ConvertPlayerWorldYToScreenY
 .scrollUp:
-    jp ScrollUp
+    call TryScrollUp
+    ret nc
+    jp ConvertPlayerWorldYToScreenY
 .onDifferentPage:
     bit 7, a
     jr nz, .scrollUp
