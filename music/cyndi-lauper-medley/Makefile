@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = CyndiLauperMedley
 
 $(PROGRAM).gb: $(PROGRAM).o

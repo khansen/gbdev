@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = TakeOnMe
 
 $(PROGRAM).gb: $(PROGRAM).o

@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = KoopasRoad
 
 $(PROGRAM).gb: $(PROGRAM).o

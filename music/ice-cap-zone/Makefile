@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = IceCapZone
 
 $(PROGRAM).gb: $(PROGRAM).o

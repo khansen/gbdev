@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = Severance
 
 $(PROGRAM).gb: $(PROGRAM).o

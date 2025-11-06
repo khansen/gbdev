@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 CC = wla-gb
 CFLAGS = -o
 LD = wlalink

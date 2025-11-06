@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = SuperMarioLandWorld1
 
 $(PROGRAM).gb: $(PROGRAM).o

@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = RockinAroundTheChristmasTree
 
 $(PROGRAM).gb: $(PROGRAM).o

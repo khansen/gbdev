@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = SmoothCriminal
 
 $(PROGRAM).gb: $(PROGRAM).o

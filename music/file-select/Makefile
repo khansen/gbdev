@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = FileSelect
 
 $(PROGRAM).gb: $(PROGRAM).o

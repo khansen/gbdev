@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = LittleSaintNick
 
 $(PROGRAM).gba: $(PROGRAM).elf

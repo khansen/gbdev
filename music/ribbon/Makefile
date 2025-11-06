@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = SaveYourKissesForTheOleRubberDuck
 
 $(PROGRAM).gb: $(PROGRAM).o

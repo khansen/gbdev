@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = EhEhNothingElseICanSay
 
 $(PROGRAM).gb: $(PROGRAM).o

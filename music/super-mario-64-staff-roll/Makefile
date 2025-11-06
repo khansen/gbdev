@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = SuperMario64StaffRoll
 
 $(PROGRAM).gb: $(PROGRAM).o

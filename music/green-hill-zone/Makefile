@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = GreenHillZone
 
 $(PROGRAM).gb: $(PROGRAM).o

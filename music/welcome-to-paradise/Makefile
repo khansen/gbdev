@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = WelcomeToParadise
 
 $(PROGRAM).gb: $(PROGRAM).o

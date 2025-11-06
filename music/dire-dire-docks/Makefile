@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = DireDireDocks
 
 $(PROGRAM).gb: $(PROGRAM).o

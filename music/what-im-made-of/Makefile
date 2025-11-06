@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = WhatImMadeOf
 
 $(PROGRAM).gb: $(PROGRAM).o

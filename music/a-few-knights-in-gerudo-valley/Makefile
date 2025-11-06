@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = AFewKnightsInGerudoValley
 
 $(PROGRAM).gb: $(PROGRAM).o

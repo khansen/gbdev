@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = LiveAndLearn
 
 $(PROGRAM).gb: $(PROGRAM).o

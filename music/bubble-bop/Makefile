@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = BubbleBop
 
 $(PROGRAM).gb: $(PROGRAM).o

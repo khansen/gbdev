@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = ThereMustBeAnAngel
 
 $(PROGRAM).gb: $(PROGRAM).o

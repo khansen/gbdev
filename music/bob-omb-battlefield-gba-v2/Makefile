@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = BobOmbBattlefield
 
 $(PROGRAM).gba: $(PROGRAM).elf

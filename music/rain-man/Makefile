@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 PROGRAM = RainMan
 
 $(PROGRAM).gb: $(PROGRAM).o
