@@ -166,6 +166,8 @@ hPlayerWorldX: dw
 hPlayerWorldXFrac: db
 hPlayerWorldY: dw
 hPlayerWorldYFrac: db
+hSpeedFrac: db
+hSpeedInt: db
 hPlayerState: db ; 0 = standing, 1 = walking
 ; Direction enum:
 ; 0=right
@@ -4780,15 +4782,15 @@ UpdatePlayerWalkingAnimation:
     ldh [hPlayerFrame], a
     ret
 
-; Try to move the player at most 1 pixel along X axis and Y axis, according to current direction.
+; Try to move the player along X axis and Y axis, according to current direction.
 ; Returns A = 0 if successful (managed to move in at least one direction), A != 0 otherwise
 TryMovePlayerInDirection:
     ldh a, [hPlayerDirection]
     rst JumpTable
-    dw TryMovePlayerRight
-    dw TryMovePlayerLeft
-    dw TryMovePlayerDown
-    dw TryMovePlayerUp
+    dw TryMovePlayerRightStraight
+    dw TryMovePlayerLeftStraight
+    dw TryMovePlayerDownStraight
+    dw TryMovePlayerUpStraight
     dw TryMovePlayerDownRight
     dw TryMovePlayerDownLeft
     dw TryMovePlayerUpRight
@@ -4856,7 +4858,14 @@ GetMetatileBehaviorForPoint:
 def PLAYER_X_EXTENT equ 6
 def PLAYER_Y_EXTENT equ 7
 
-; Try to move the player 1 pixel to the right.
+TryMovePlayerRightStraight:
+    ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
+    ldh [hSpeedInt], a
+    ; fallthrough
+
+; Try to move the player <speed> pixels to the right.
 ; Returns A = 0 if successful, A != 0 otherwise
 TryMovePlayerRight:
     ; check for collision top right
@@ -4885,11 +4894,18 @@ TryMovePlayerRight:
     call GetMetatileBehaviorForPoint
     or a, a
     ret nz
-    ; move one pixel right
+    ; add speed
+    ldh a, [hSpeedFrac]
+    ld b, a
+    ldh a, [hPlayerWorldXFrac]
+    add a, b
+    ldh [hPlayerWorldXFrac], a
+    ldh a, [hSpeedInt]
+    ld b, a
     ldh a, [hPlayerWorldX]
-    inc a
+    adc a, b
     ldh [hPlayerWorldX], a
-    jr nz, .noPageWrap
+    jr nc, .noPageWrap
     ldh a, [hPlayerWorldX+1]
     inc a
     ldh [hPlayerWorldX+1], a
@@ -4900,7 +4916,14 @@ TryMovePlayerRight:
     xor a, a ; success
     ret
 
-; Try to move the player 1 pixel to the left.
+TryMovePlayerLeftStraight:
+    ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
+    ldh [hSpeedInt], a
+    ; fallthrough
+
+; Try to move the player <speed> pixels to the left.
 ; Returns A = 0 if successful, A != 0 otherwise
 TryMovePlayerLeft:
     ; check for collision top left
@@ -4929,24 +4952,36 @@ TryMovePlayerLeft:
     call GetMetatileBehaviorForPoint
     or a, a
     ret nz
-    ; move one pixel left
+    ; subtract speed
+    ldh a, [hSpeedFrac]
+    ld b, a
+    ldh a, [hPlayerWorldXFrac]
+    sub a, b
+    ldh [hPlayerWorldXFrac], a
+    ldh a, [hSpeedInt]
+    ld b, a
     ldh a, [hPlayerWorldX]
-    or a, a
-    jr nz, .noPageWrap
+    sbc a, b
+    ldh [hPlayerWorldX], a
+    jr nc, .noPageWrap
     ldh a, [hPlayerWorldX+1]
     dec a
     ldh [hPlayerWorldX+1], a
     ldh a, [hPlayerPageWrapFlags]
     set 1, a
     ldh [hPlayerPageWrapFlags], a
-    xor a, a
 .noPageWrap:
-    dec a
-    ldh [hPlayerWorldX], a
     xor a, a ; success
     ret
 
-; Try to move the player 1 pixel down.
+TryMovePlayerDownStraight:
+    ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
+    ldh [hSpeedInt], a
+    ; fallthrough
+
+; Try to move the player <speed> pixels down.
 ; Returns A = 0 if successful, A != 0 otherwise
 TryMovePlayerDown:
     ; check for collision bottom left
@@ -4975,11 +5010,18 @@ TryMovePlayerDown:
     call GetMetatileBehaviorForPoint
     or a, a
     ret nz
-    ; move one pixel down
+    ; add speed
+    ldh a, [hSpeedFrac]
+    ld b, a
+    ldh a, [hPlayerWorldYFrac]
+    add a, b
+    ldh [hPlayerWorldYFrac], a
+    ldh a, [hSpeedInt]
+    ld b, a
     ldh a, [hPlayerWorldY]
-    inc a
+    adc a, b
     ldh [hPlayerWorldY], a
-    jr nz, .noPageWrap
+    jr nc, .noPageWrap
     ldh a, [hPlayerWorldY+1]
     inc a
     ldh [hPlayerWorldY+1], a
@@ -4990,7 +5032,14 @@ TryMovePlayerDown:
     xor a, a ; success
     ret
 
-; Try to move the player 1 pixel up.
+TryMovePlayerUpStraight:
+    ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
+    ldh [hSpeedInt], a
+    ; fallthrough
+
+; Try to move the player <speed> pixels up.
 ; Returns A = 0 if successful, A != 0 otherwise
 TryMovePlayerUp:
     ; check for collision top left
@@ -5020,23 +5069,32 @@ TryMovePlayerUp:
     or a, a
     ret nz
     ; move one pixel up
+    ldh a, [hSpeedFrac]
+    ld b, a
+    ldh a, [hPlayerWorldYFrac]
+    sub a, b
+    ldh [hPlayerWorldYFrac], a
+    ldh a, [hSpeedInt]
+    ld b, a
     ldh a, [hPlayerWorldY]
-    or a, a
-    jr nz, .noPageWrap
+    sbc a, b
+    ldh [hPlayerWorldY], a
+    jr nc, .noPageWrap
     ldh a, [hPlayerWorldY+1]
     dec a
     ldh [hPlayerWorldY+1], a
     ldh a, [hPlayerPageWrapFlags]
     set 3, a
     ldh [hPlayerPageWrapFlags], a
-    xor a, a
 .noPageWrap:
-    dec a
-    ldh [hPlayerWorldY], a
     xor a, a ; success
     ret
 
 TryMovePlayerDownRight:
+    ld a, $B5 ; approximation of 1/sqrt(2): 0.70703125
+    ldh [hSpeedFrac], a
+    ld a, 0
+    ldh [hSpeedInt], a
     call TryMovePlayerDown
     ld c, a
     push bc
@@ -5048,6 +5106,10 @@ TryMovePlayerDownRight:
     ret
 
 TryMovePlayerDownLeft:
+    ld a, $B5
+    ldh [hSpeedFrac], a
+    ld a, 0
+    ldh [hSpeedInt], a
     call TryMovePlayerDown
     ld c, a
     push bc
@@ -5059,6 +5121,10 @@ TryMovePlayerDownLeft:
     ret
 
 TryMovePlayerUpRight:
+    ld a, $B5
+    ldh [hSpeedFrac], a
+    ld a, 0
+    ldh [hSpeedInt], a
     call TryMovePlayerUp
     ld c, a
     push bc
@@ -5070,6 +5136,10 @@ TryMovePlayerUpRight:
     ret
 
 TryMovePlayerUpLeft:
+    ld a, $B5
+    ldh [hSpeedFrac], a
+    ld a, 0
+    ldh [hSpeedInt], a
     call TryMovePlayerUp
     ld c, a
     push bc
