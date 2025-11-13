@@ -4859,7 +4859,7 @@ def PLAYER_X_EXTENT equ 6
 def PLAYER_Y_EXTENT equ 7
 
 TryMovePlayerRightStraight:
-    ld a, 0
+    ld a, $6A
     ldh [hSpeedFrac], a
     ld a, 1
     ldh [hSpeedInt], a
@@ -4917,7 +4917,7 @@ TryMovePlayerRight:
     ret
 
 TryMovePlayerLeftStraight:
-    ld a, 0
+    ld a, $6A
     ldh [hSpeedFrac], a
     ld a, 1
     ldh [hSpeedInt], a
@@ -4975,7 +4975,7 @@ TryMovePlayerLeft:
     ret
 
 TryMovePlayerDownStraight:
-    ld a, 0
+    ld a, $6A
     ldh [hSpeedFrac], a
     ld a, 1
     ldh [hSpeedInt], a
@@ -5033,7 +5033,7 @@ TryMovePlayerDown:
     ret
 
 TryMovePlayerUpStraight:
-    ld a, 0
+    ld a, $6A
     ldh [hSpeedFrac], a
     ld a, 1
     ldh [hSpeedInt], a
@@ -5091,9 +5091,9 @@ TryMovePlayerUp:
     ret
 
 TryMovePlayerDownRight:
-    ld a, $B5 ; approximation of 1/sqrt(2): 0.70703125
-    ldh [hSpeedFrac], a
     ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
     ldh [hSpeedInt], a
     call TryMovePlayerDown
     ld c, a
@@ -5106,9 +5106,9 @@ TryMovePlayerDownRight:
     ret
 
 TryMovePlayerDownLeft:
-    ld a, $B5
-    ldh [hSpeedFrac], a
     ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
     ldh [hSpeedInt], a
     call TryMovePlayerDown
     ld c, a
@@ -5121,9 +5121,9 @@ TryMovePlayerDownLeft:
     ret
 
 TryMovePlayerUpRight:
-    ld a, $B5
-    ldh [hSpeedFrac], a
     ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
     ldh [hSpeedInt], a
     call TryMovePlayerUp
     ld c, a
@@ -5136,9 +5136,9 @@ TryMovePlayerUpRight:
     ret
 
 TryMovePlayerUpLeft:
-    ld a, $B5
-    ldh [hSpeedFrac], a
     ld a, 0
+    ldh [hSpeedFrac], a
+    ld a, 1
     ldh [hSpeedInt], a
     call TryMovePlayerUp
     ld c, a
@@ -5246,6 +5246,8 @@ FlushRendererRequests:
 ; Input: hPlayerScreenX and hPlayerScreenY
 CenterCameraOnPlayer:
     call CenterCameraOnPlayerXAxis
+    call CenterCameraOnPlayerXAxis
+    call CenterCameraOnPlayerYAxis
     jr CenterCameraOnPlayerYAxis
 
 CenterCameraOnPlayerXAxis:
