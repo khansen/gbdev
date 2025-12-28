@@ -1,0 +1,10 @@
+source:0x10 target:0 transpose:-15
+source:0x11 target:1 transpose:-15
+source:0x12 target:2 transpose:-15
+source:0x21 target:3 transpose:-27
+source:0x31 target:4 transpose:-42
+source:0x32 target:5 transpose:-51
+source:0x33 target:6 transpose:-44
+source:0x34 target:7 transpose:-34
+source:0x22 target:8 transpose:-27
+source:0x24 target:9 transpose:-27
