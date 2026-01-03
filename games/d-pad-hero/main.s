@@ -3169,6 +3169,7 @@ db 0
 
 GameScreenTilemap:
 incbin "gamescreentilemap.bin"
+db 0
 
 SECTION "Hit cue streams", ROM0
 
