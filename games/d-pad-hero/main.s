@@ -37,9 +37,9 @@ hTimerCallback: dw
 def TIMER_SPEED equ 4
 
 def HIT_CUE_DELAY_WIDTH equ 3
-def HIT_CUE_PAYLOAD_WIDTH equ 4
+def HIT_CUE_BASE_PAYLOAD_WIDTH equ 4
 
-def HIT_START_Y equ 139
+def HIT_START_Y equ 129
 def HIT_EXTENT equ 13
 
 hHitCueStream: dw
@@ -52,6 +52,8 @@ hHitCueProcessingPending: db
 hFreeTargetsList: db
 hActiveTargetsHead: db
 hActiveTargetsTail: db
+hHeldTargetsHead: db
+hHeldTargetsTail: db
 hHitTargetsHead: db
 hHitTargetsTail: db
 hMissedTargetsHead: db
@@ -65,11 +67,14 @@ hCheckedLanes: db
 hHittableLanes: db
 hHitLanes: db
 hErrorLanes: db
+hDrawHoldLength: db
 
 rsreset
 def Target_Next rb 1                    ; 00
 def Target_State rb 1                   ; 01
 def Target_PosY_Frac rb 1               ; 02
+rsset Target_PosY_Frac
+def Target_HoldTimer rb 1               ; 02
 def Target_PosY_Int  rb 1               ; 03
 def Target_SIZEOF    rb 0               ; 04
 
@@ -108,6 +113,11 @@ wVramBuffer:
 
 wTargetsArena:
     ds Target_SIZEOF * MAX_TARGETS
+
+def MAX_HOLD_TIMERS equ 16
+wHoldTimerTable: ds MAX_HOLD_TIMERS
+
+wTargetDurationByLane: ds 4
 
 ; --- Begin Sound engine
 
@@ -2209,6 +2219,7 @@ GameInit:
     ldh [hSoundStatus], a ; unmute all channels
 
     call InitializeTargetLists
+    call InitializeHoldTimerTable
 
     ; Initialize hit cue
     ld a, HIGH(SongHitCueStream)
@@ -2236,10 +2247,32 @@ OnPatternRowChange:
     ldh [hHitCueProcessingPending], a
     ret
 
+; Builds lookup table of hold timers from speed.
+; Each entry is (3 * speed) + (n * 4 * speed)
+; where n = 0, 1, ..., MAX_HOLD_TIMERS - 1
+InitializeHoldTimerTable:
+    ld hl, wTracks + Track_Speed
+    ld a, [hl] ; speed
+    ld c, a
+    add a, a
+    add a, a
+    ld d, a ; speed * 4
+    sub a, c ; speed * 3
+    ld hl, wHoldTimerTable
+    ld b, MAX_HOLD_TIMERS
+    .loop:
+    ld [hli], a
+    add a, d ; speed * 4
+    dec b
+    jr nz, .loop
+    ret
+
 InitializeTargetLists:
     ld a, ZILCH_ITEM
     ldh [hActiveTargetsHead], a
     ldh [hActiveTargetsTail], a
+    ldh [hHeldTargetsHead], a
+    ldh [hHeldTargetsTail], a
     ldh [hHitTargetsHead], a
     ldh [hHitTargetsTail], a
     ldh [hMissedTargetsHead], a
@@ -2434,6 +2467,7 @@ MainFunc_Gameplay:
     call GetLaneInputsFromButtons
     call ProcessHitCues
     call ProcessActiveTargets
+    call ProcessHeldTargets
     call ProcessHitTargets
     jp ProcessMissedTargets
 
@@ -2441,6 +2475,9 @@ MainFunc_WaitForAllClear:
     call MainFunc_Gameplay
     ldh a, [hActiveTargetsHead]
     cp ZILCH_ITEM ; any active targets?
+    ret nz ; exit if so
+    ldh a, [hHeldTargetsHead]
+    cp ZILCH_ITEM ; any held targets?
     ret nz ; exit if so
     ldh a, [hHitTargetsHead]
     cp ZILCH_ITEM ; any hit targets?
@@ -2467,13 +2504,22 @@ ProcessHitCues:
     ret z ; exit if no processing pending
     dec a
     ldh [hHitCueProcessingPending], a
+    ; set target defaults
+    xor a
+    ld hl, wTargetDurationByLane
+    ld [hli], a
+    ld [hli], a
+    ld [hli], a
+    ld [hl], a
     ; process hit cue entry
-    ld a, HIT_CUE_PAYLOAD_WIDTH
+    ld a, HIT_CUE_BASE_PAYLOAD_WIDTH
     call ReadHitCueStreamBits
+    ; TODO: A = 12 means extended event
     cp a, 15 ; end of stream?
     jr z, .endOfStream
     or a
     jr z, .20
+    ; TODO: set item = normal for each lane
     ; TODO: respect the type bits
     call Prng
     and a, 15
@@ -2546,7 +2592,7 @@ Align8
 db 1,2,4,8,12,16,24,32
 
 ; A = lane (bits 1..0)
-; Destroys: A, B, HL
+; Destroys: A, B, HL, DE
 AddTarget:
     push af ; save lane
 ; grab target from free list
@@ -2564,10 +2610,15 @@ AddTarget:
     ld [hli], a ; Target_Next (this will become the new tail)
 ; initialize the target
     pop af ; restore lane
+    ld b, a ; lane
+  ; get duration
+    ld d, HIGH(wTargetDurationByLane)
+    or a, LOW(wTargetDurationByLane)
+    ld e, a
+;    ld a, [de] ; duration
+    ld a, 2 << 2 ; TODO: for testing, fixed duration
+    or a, b ; add lane
     ld [hli], a ; Target_State
-; TODO: set duration
-;    tya
-;    sta targets_2.duration,x
     xor a
     ld [hli], a ; Target_PosY_Frac
     ld a, 0 ; initial Y position
@@ -2710,7 +2761,7 @@ ProcessActiveTargets:
     .10:
     ldh a, [hCheckedLanes]
     and c
-    jr nz, .moveAndDraw ; we already checked this lane, target can't possible be within hit range
+    jr nz, .moveAndDraw ; we already checked this lane, target can't possibly be within hit range
 
     ldh a, [hCheckedLanes]
     or c ; set lane bit
@@ -2738,13 +2789,27 @@ ProcessActiveTargets:
     ldh a, [hHitLanes]
     or c ; set lane bit
     ldh [hHitLanes], a
-    jr .next ; don't draw. It will be moved to hit list and processed by ProcessHitTargets
+    jr .next ; don't draw. It will be moved to hit list or held list by SweepActiveTargets()
 
     ; hl should point to Target_State
     .moveAndDraw:
     call MoveTarget
-    call DrawNormalTarget
-
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, .isHoldTarget
+    call DrawTapTarget
+    jr .next
+    .isHoldTarget:
+; map duration to tail length in pixels
+    srl a
+    srl a
+    dec a
+    or a, LOW(wHoldTimerTable)
+    ld e, a
+    ld d, HIGH(wHoldTimerTable)
+    ld a, [de] ; timer
+    ldh [hDrawHoldLength], a
+    call DrawHoldTarget
     .next:
     ld a, l
     and a, ~3 ; Target_Next
@@ -2772,44 +2837,8 @@ ProcessActiveTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
-    ld a, [hl] ; old Target_Next
-    ld b, a ; save Target_Next
-    ld a, ZILCH_ITEM
-    ld [hl], a ; Target_Next (end of list)
-    ldh a, [hMissedTargetsTail]
-    ld c, a ; save old tail
-    ld a, l
-    ldh [hMissedTargetsTail], a ; make this the new tail
-    ld a, c ; old tail
-    cp ZILCH_ITEM ; starting the list?
-    jr nz, .30
-    ld a, l
-    ldh [hMissedTargetsHead], a
-    jr .40
-    .30:
-    ld a, l
-    push af ; save this target
-    ld l, c ; old tail
-    ld [hl], a ; Target_Next (point old tail to this)
-    pop af ; restore this target
-    ld l, a
-    .40:
-    ldh a, [hActiveTargetsTail]
-    cp a, l ; removing the tail?
-    ldh a, [hPrev]
-    jr nz, .50
-    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
-    .50:
-    cp ZILCH_ITEM ; removing the head?
-    jr nz, .60
-    ld a, b ; old Target_Next
-    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
-    jp .loop
-    .60:
-    ld l, a
-    ld a, b ; old Target_Next
-    ld [hl], a ; previous Target_Next = this Target_Next
-    jp .loop
+    call MoveActiveTargetToMissedList
+    jr .loop
 
 ; HL = pointer to Target_State
 MoveTarget:
@@ -2819,14 +2848,16 @@ MoveTarget:
     ld a, [hl] ; Target_PosY_Int
     inc a
     ld [hl-], a ; Target_PosY_Int
+    dec l ; Target_State
     ret
 
-; HL = pointer to Target_PosY_Frac
-DrawNormalTarget:
-    push hl ; Target_PosY_Frac
+; HL = pointer to Target_State
+DrawTapTarget:
+    push hl ; Target_State
     ld d, h
     ld e, l
     call BeginDrawSprites
+    inc e ; Target_PosY_Frac
     inc e ; Target_PosY_Int
     ld a, [de] ; Target_PosY_Int
     ld b, a
@@ -2835,8 +2866,7 @@ DrawNormalTarget:
     ld a, [de] ; Target_State
     and a, 3 ; lane
     sla a
-    sla a ; lane * 4
-    push af
+    sla a
     sla a
     sla a ; lane * 16 (0, 16, 32, 48)
     bit 5, a ; is it lane 2 or 3 (B or A)?
@@ -2850,9 +2880,7 @@ DrawNormalTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    pop af ; lane * 4
-    push af
-    add a, $76
+    ld a, $7a
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2862,13 +2890,99 @@ DrawNormalTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    pop af ; lane * 2
-    add a, $76+2
+    ld a, $7a
+    ld [hli], a ; tile
+    ld a, OAMF_XFLIP
+    ld [hli], a  ; attributes
+    call EndDrawSprites
+    pop hl ; Object_State
+    ret
+
+; HL = pointer to Target_State
+; hDrawHoldLength = length of hold tail in pixels
+; Destroys: AF, BC, DE
+DrawHoldTarget:
+    push hl ; Target_State
+; Step 1. Draw the head (same as tap target, but different tile)
+    ld d, h
+    ld e, l
+    call BeginDrawSprites
+    inc e ; Target_PosY_Frac
+    inc e ; Target_PosY_Int
+    ld a, [de] ; Target_PosY_Int
+    ld b, a
+    dec e ; Target_PosY_Frac
+    dec e ; Target_State
+    ld a, [de] ; Target_State
+    and a, 3 ; lane
+    sla a
+    sla a
+    sla a
+    sla a ; lane * 16 (0, 16, 32, 48)
+    bit 5, a ; is it lane 2 or 3 (B or A)?
+    jr z, .10
+    add 16 ; middle gap
+    .10:
+    add a, 40 ; left offset
+    ld c, a ; x
+    ; left half
+    ld a, b ; y
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, $7c
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
+    ; right half
+    ld a, b ; y
+    ld [hli], a ; y
+    ld a, c ; x
+    add a, 8
+    ld [hli], a ; x
+    ld a, $7c
+    ld [hli], a ; tile
+    ld a, OAMF_XFLIP
+    ld [hli], a  ; attributes
+; Step 2. Draw the tail
+    ld a, c ; x
+    add a, 4
+    ld c, a ; x
+; draw the segments
+    ldh a, [hDrawHoldLength]
+    .wholeSegmentsLoop:
+    ld e, a ; remaining length
+    cp 16
+    jr c, .partialSegment
+    ld a, b ; y
+    sub a, 16
+    ld b, a
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, $9c
+    ld [hli], a ; tile
+    ld a, 0
+    ld [hli], a  ; attributes
+    ld a, e
+    sub 16
+    jr z, .tailDone
+    jr .wholeSegmentsLoop
+    .partialSegment:
+    ld a, b ; y
+    sub a, e ; remaining length
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, e ; remaining length
+    sla a
+    add a, $7c
+    ld [hli], a ; tile
+    ld a, 0
+    ld [hli], a  ; attributes
+    .tailDone:
     call EndDrawSprites
-    pop hl ; Object_PosY_Frac
+    pop hl ; Object_State
     ret
 
 ; HL = pointer to Target_PosY_Frac
@@ -2903,7 +3017,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $86 ; exploded tile base
+    add a, $9e ; exploded tile base
     push af
     ld [hli], a ; tile
     ld a, 0
@@ -2941,7 +3055,7 @@ CheckForErrors:
     ret
 
 ; ProcessActiveTargets() helper function.
-; Explodes active targets that were hit and moves them to the hit list.
+; Moves active targets that were hit either to the hit list (duration=1) or held list (duration>1).
 SweepActiveTargets:
     ld a, ZILCH_ITEM
     ldh [hPrev], a
@@ -2953,8 +3067,7 @@ SweepActiveTargets:
     or a
     ret z ; exit if no more hits to process
 
-    ld a, [hli] ; Target_Next
-    ld b, a
+    inc l ; Target_State
     ld a, [hl] ; Target_State
     ; compute bit mask for lane in C
     ld c, 1
@@ -2969,10 +3082,11 @@ SweepActiveTargets:
     ldh a, [hHitLanes]
     and a, c ; is this lane hit?
     jr nz, .hitTarget
+    dec l ; Target_Next
     ld a, l
-    dec a ; Target_Next
     ldh [hPrev], a
-    ld l, b ; Target_Next
+    ld a, [hl] ; Target_Next
+    ld l, a
     jr .loop
 
     .hitTarget:
@@ -2991,19 +3105,42 @@ SweepActiveTargets:
 
     inc l ; Target_PosY_Frac
     inc l ; Target_PosY_Int
-    ld a, 143 ; lock to grid
+    ld a, HIT_START_Y + (HIT_EXTENT / 2); lock to grid
     ld [hl-], a ; Target_PosY_Int
     dec l ; Target_State
-    dec l ; Target_Next
+    ld a, [hl-] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, .isHeldTarget
     call MoveActiveTargetToHitList
-    ld l, b ; Target_Next
+    ld l, a ; Target_Next
+    jr .loop
+
+    .isHeldTarget:
+; map duration to hold timer
+    srl a
+    srl a
+    dec a
+    or a, LOW(wHoldTimerTable)
+    ld e, a
+    ld d, HIGH(wHoldTimerTable)
+    ld a, [de] ; timer
+    inc l ; Target_State
+    inc l ; Target_HoldTimer
+    ld [hl-], a ; Target_HoldTimer
+    dec l ; Target_Next
+
+    call MoveActiveTargetToHeldList
+    ld l, a ; Target_Next
     jr .loop
 
 ; HL = pointer to Target_Next
-; B = Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
 MoveActiveTargetToHitList:
+    ld a, [hl] ; old Target_Next
+    ld b, a
     ld a, ZILCH_ITEM
-    ld [hl], a ; Target_Next
+    ld [hl], a ; Target_Next (end of list)
     ldh a, [hHitTargetsTail]
     ld c, a ; save old tail
     ld a, l
@@ -3028,14 +3165,234 @@ MoveActiveTargetToHitList:
     .30:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .40
-    ld a, b ; Target_Next
+    ld a, b ; old Target_Next
     ldh [hActiveTargetsHead], a ; yes. Next becomes new head
     ret
     .40:
     ld l, a
-    ld a, b ; Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveActiveTargetToMissedList:
+    ld a, [hl] ; old Target_Next
+    ld b, a
+    ld a, ZILCH_ITEM
+    ld [hl], a ; Target_Next (end of list)
+    ldh a, [hMissedTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hMissedTargetsTail], a ; make this the new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hMissedTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hActiveTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveActiveTargetToHeldList:
+    ld a, [hl] ; old Target_Next
+    ld b, a
+    ld a, ZILCH_ITEM
+    ld [hl], a ; Target_Next
+    ldh a, [hHeldTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hHeldTargetsTail], a ; this target becomes new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hHeldTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hActiveTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveHeldTargetToHitList:
+    ld a, [hl] ; old Target_Next
+    ld b, a
+    ld a, ZILCH_ITEM
+    ld [hl], a ; Target_Next
+    ldh a, [hHitTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hHitTargetsTail], a ; this target becomes new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hHitTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hHeldTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hHeldTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hHeldTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveHeldTargetToMissedList:
+    ld a, [hl] ; old Target_Next
+    ld b, a
+    ld a, ZILCH_ITEM
+    ld [hl], a ; Target_Next (end of list)
+    ldh a, [hMissedTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hMissedTargetsTail], a ; make this the new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hMissedTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hHeldTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hHeldTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hHeldTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+ProcessHeldTargets:
+    ld a, ZILCH_ITEM
+    ldh [hPrev], a
+    ldh a, [hHeldTargetsHead]
+    ld h, HIGH(wTargetsArena)
+    .loop:
+    cp ZILCH_ITEM ; end of list?
+    ret z ; exit if so
+    .foo:
+    ld l, a ; Target_Next
+    inc l ; Target_State
+    ld a, [hli] ; Target_State
+    ; compute bit mask for lane in C
+    ld c, 1
+    and a, 3 ; lane
+    jr z, .10
+    .20:
+    sla c
+    dec a
+    jr nz, .20
+    .10:
+    ldh a, [hLaneInput]
+    and a, c ; is this lane still held?
+    jr nz, .stillHeld
+
+    ; no longer held - move held target to missed list (TODO: decide on scoring)
+    ; TODO: turn off sound channels (like we do for tap misses)?
+    ; clear timer
+    xor a
+    ld [hl-], a ; Target_HoldTimer
+    dec l ; Target_Next
+    call MoveHeldTargetToMissedList
+    jr .loop
+
+    .stillHeld:
+    ld a, [hl] ; Target_HoldTimer
+    dec a
+    jr z, .timerExpired
+    ; not yet expired
+    ld [hl-], a ; Target_HoldTimer
+    ldh [hDrawHoldLength], a
+    call DrawHoldTarget
+    ld a, l
+    and a, ~3 ; Target_Next
+    ldh [hPrev], a
+    ld l, a
+    ld a, [hl] ; Target_Next
+    jr .loop
+
+    .timerExpired:
+    ld a, l
+    and a, ~3 ; Target_Next
+    ld l, a
+    call MoveHeldTargetToHitList
+    jr .loop
 
 ProcessHitTargets:
     ld a, ZILCH_ITEM
@@ -3044,10 +3401,9 @@ ProcessHitTargets:
     ld h, HIGH(wTargetsArena)
     .loop:
     cp ZILCH_ITEM ; end of list?
-    ret z
-    ld l, a
-    ld a, [hli] ; Target_Next
-    push af ; save Target_Next
+    ret z ; exit if so
+    ld l, a ; Target_Next
+    inc l ; Target_State
     ld a, [hl] ; Target_State
     and a, $3C ; counter bits (5..2)
     cp $3C
@@ -3059,12 +3415,15 @@ ProcessHitTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ldh [hPrev], a
-    pop af ; restore Target_Next
+    ld l, a
+    ld a, [hl] ; Target_Next
     jr .loop
 
     .evaporated:
     ; put on free list
     dec l ; Target_Next
+    ld a, [hl] ; old Target_Next
+    ld b, a ; save Target_Next
     ldh a, [hFreeTargetsList] ; old head of free list
     ld [hl], a ; Target_Next
     ld a, l ; this target
@@ -3078,12 +3437,12 @@ ProcessHitTargets:
     .10:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .20
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ldh [hHitTargetsHead], a ; yes. Next becomes new head
     jr .loop
     .20:
     ld l, a ; previous
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     jr .loop
 
@@ -3095,21 +3454,24 @@ ProcessMissedTargets:
     .loop:
     cp ZILCH_ITEM ; end of list?
     ret z ; exit if so
-    ld l, a
-    ld a, [hli] ; Target_Next
-    push af ; save Target_Next
+    ld l, a ; Target_Next
+    inc l ; Target_State
     call MoveTarget
+    inc l ; Target_PosY_Frac
     inc l ; Target_PosY_Int
     ld a, [hl] ; Target_PosY_Int
     cp 160 ; fell off screen?
     jr nc, .fell_off
     ; still visible
     dec l ; Target_PosY_Frac
-    call DrawNormalTarget
+    dec l ; Target_State
+    ; TODO: if it's a hold target, collapse the tail
+    call DrawTapTarget
     ld a, l
     and a, ~3 ; Target_Next
     ldh [hPrev], a
-    pop af ; restore Target_Next
+    ld l, a
+    ld a, [hl] ; Target_Next
     jr .loop
 
     .fell_off:
@@ -3117,6 +3479,8 @@ ProcessMissedTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
+    ld a, [hl] ; old Target_Next
+    ld b, a ; save Target_Next
     ldh a, [hFreeTargetsList] ; old head of free list
     ld [hl], a ; Target_Next
     ld a, l ; this target
@@ -3130,12 +3494,12 @@ ProcessMissedTargets:
     .10:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .20
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ldh [hMissedTargetsHead], a ; yes. Next becomes new head
     jr .loop
     .20:
     ld l, a ; previous
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     jr .loop
 
@@ -3157,7 +3521,7 @@ TitleScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
-incbin "buttonsprites.bin"
+incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 GameTilesEnd:
 
@@ -3174,17 +3538,14 @@ db 0
 SECTION "Hit cue streams", ROM0
 
 SongHitCueStream:
-db $0C,$2C,$58,$B1,$A1,$85,$8B,$16,$34,$30,$B1,$62,$C6,$86,$16,$2C
-db $58,$D1,$83,$47,$02,$16,$30,$68,$E0,$42,$C6,$0D,$16,$34,$10,$B1
-db $83,$47,$04,$18,$30,$78,$B1,$83,$07,$8B,$18,$30,$78,$B1,$83,$45
-db $8E,$04,$18,$58,$B1,$63,$43,$0B,$16,$2C,$68,$61,$62,$C5,$8D,$0C
-db $2C,$58,$B1,$A3,$06,$8E,$04,$2C,$60,$D1,$C0,$85,$8C,$1A,$2C,$68
-db $21,$63,$06,$8E,$08,$30,$60,$F1,$63,$06,$0F,$16,$30,$60,$F1,$63
-db $06,$8B,$1C,$08,$68,$C1,$C1,$01,$8B,$18,$2C,$58,$D0,$40,$C5,$8C
-db $16,$2C,$60,$B0,$43,$06,$0E,$08,$2C,$58,$B1,$62,$C5,$8B,$16,$2C
-db $58,$B1,$62,$C5,$8B,$16,$2C,$58,$B1,$62,$C5,$8B,$16,$2C,$58,$B1
-db $62,$C5,$8B,$16,$34,$60,$E0,$80,$C5,$8C,$16,$2C,$68,$20,$62,$C6
-db $0B,$16,$30,$58,$21,$83,$07,$04,$04,$30,$60,$C1,$62,$3C
+db $0E,$34,$10,$C0,$E3,$41,$0C,$0E,$34,$10,$C0,$E3,$C7,$02,$1C,$10
+db $70,$21,$C1,$07,$02,$1C,$10,$70,$21,$C1,$07,$0F,$06,$38,$78,$31
+db $C3,$C1,$8E,$04,$38,$20,$71,$A3,$43,$8D,$1A,$1C,$68,$D0,$E3,$46
+db $8E,$04,$38,$20,$E0,$43,$82,$0E,$04,$38,$20,$E0,$43,$82,$0E,$1E
+db $0C,$70,$F0,$63,$87,$83,$1C,$08,$70,$41,$C0,$87,$04,$0A,$34,$10
+db $E0,$41,$46,$82,$1A,$08,$58,$51,$C1,$86,$8D,$1A,$34,$68,$D1,$A3
+db $46,$8D,$1A,$34,$68,$D1,$A3,$47,$02,$1C,$10,$28,$D0,$43,$81,$05
+db $1A,$08,$68,$21,$61,$47,$06,$04,$38,$68,$21,$1E
 
 SECTION "Song data", ROM0
 
