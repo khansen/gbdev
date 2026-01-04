@@ -2868,19 +2868,17 @@ DrawTapTarget:
     sla a
     sla a
     sla a
+    ld c, a ; lane * 8
     sla a ; lane * 16 (0, 16, 32, 48)
-    bit 5, a ; is it lane 2 or 3 (B or A)?
-    jr z, .10
-    add 16 ; middle gap
-    .10:
-    add a, 40 ; left offset
+    add a, c ; lane * 24
+    add a, 20 ; left offset
     ld c, a ; x
     ; left half
     ld a, b ; y
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $72
+    ld a, $6c
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2890,7 +2888,7 @@ DrawTapTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $72
+    ld a, $6c
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -2918,19 +2916,17 @@ DrawHoldTarget:
     sla a
     sla a
     sla a
+    ld c, a ; lane * 8
     sla a ; lane * 16 (0, 16, 32, 48)
-    bit 5, a ; is it lane 2 or 3 (B or A)?
-    jr z, .10
-    add 16 ; middle gap
-    .10:
-    add a, 40 ; left offset
+    add a, c ; lane * 24
+    add a, 20 ; left offset
     ld c, a ; x
     ; left half
     ld a, b ; y
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $74
+    ld a, $6e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2940,7 +2936,7 @@ DrawHoldTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $74
+    ld a, $6e
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -2960,7 +2956,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $94
+    ld a, $8e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2976,7 +2972,7 @@ DrawHoldTarget:
     ld [hli], a ; x
     ld a, e ; remaining length
     sla a
-    add a, $74
+    add a, $6e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -3002,12 +2998,10 @@ DrawExplodedTarget:
     sla a
     sla a
     sla a
+    ld c, a ; lane * 8
     sla a ; lane * 16 (0, 16, 32, 48)
-    bit 5, a ; is it lane 2 or 3 (B or A)?
-    jr z, .10
-    add 16 ; middle gap
-    .10:
-    add a, 40 ; left offset
+    add a, c ; lane * 24
+    add a, 20 ; left offset
     ld c, a ; x
     ; left half
     ld a, b ; y
@@ -3017,7 +3011,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $9e ; exploded tile base
+    add a, $90 ; exploded tile base
     push af
     ld [hli], a ; tile
     ld a, 0
