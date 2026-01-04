@@ -2880,7 +2880,7 @@ DrawTapTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $7a
+    ld a, $72
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2890,7 +2890,7 @@ DrawTapTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $7a
+    ld a, $72
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -2930,7 +2930,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $7c
+    ld a, $74
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2940,7 +2940,7 @@ DrawHoldTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $7c
+    ld a, $74
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -2960,7 +2960,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $9c
+    ld a, $94
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2976,7 +2976,7 @@ DrawHoldTarget:
     ld [hli], a ; x
     ld a, e ; remaining length
     sla a
-    add a, $7c
+    add a, $74
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
