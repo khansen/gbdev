@@ -6,6 +6,8 @@ hOamDmaFunction:
     ds $0a
 .end:
 
+; TODO: Use "ld [hl], b" and "ld b, [hl]" and "ld [hl], 1" where appropriate
+
 hOamOffset: db
 
 hButtonsHeld: db
@@ -47,6 +49,10 @@ hHitCueStreamBitCtr: db
 hHitCueStreamBits: db
 hHitCueTimer: db
 hHitCueProcessingPending: db
+hHitCueProgressHi: db
+hHitCueProgressLo: db
+hHitCueProgressIncHi: db
+hHitCueProgressIncLo: db
 
 ; linked lists
 hFreeTargetsList: db
@@ -68,6 +74,28 @@ hHittableLanes: db
 hHitLanes: db
 hErrorLanes: db
 hDrawHoldLength: db
+hSuppressedLanes: db
+
+hGameBehaviorState0: db
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT          equ 0
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY           equ 1
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION equ 2
+def GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE              equ %00000011 ; 0 = respect, 1 = tapify, 2 = uniform duration
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED         equ %00000100
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ALLOW_NONE      equ %00001000
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE            equ %00110000 ; 0 = deterministic, 1 = seeded, 2 = full
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MAX_PICKED      equ %11000000
+def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED          equ 2
+def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ALLOW_NONE       equ 3
+hGameBehaviorState1: db
+hIntensityMax: db
+
+; Playtest settings screen
+hCurrentPlaytestSetting: db
+def PLAYTEST_SETTINGS_COUNT equ 3
+def PLAYTEST_SETTING__INTENSITY_MAX equ 0
+def PLAYTEST_SETTING__HOLD_NOTES equ 1
+def PLAYTEST_SETTING__RANDOM_NOTES equ 2
 
 rsreset
 def Target_Next rb 1                    ; 00
@@ -101,6 +129,9 @@ hShadowNR42: db
 ; bit 5: paused (1=yes)
 hSoundStatus: db
 
+; number of rows to wait before starting playback
+hSoundPrerollRowsRemaining: db
+
 ; --- End Sound engine
 
 SECTION "WRAM", WRAM0[$c000]
@@ -118,6 +149,7 @@ def MAX_HOLD_TIMERS equ 16
 wHoldTimerTable: ds MAX_HOLD_TIMERS
 
 wTargetDurationByLane: ds 4
+wLaneIntensities: ds 4
 
 ; --- Begin Sound engine
 
@@ -667,6 +699,9 @@ StartSong:
     cp a, $ff ; channel not in use?
     jr z, .skip
     ld a, [hli] ; speed
+if !def(NO_SONG_SPEED_ADJUSTMENT)
+    dec a
+endc
     ; slow it down by 8x - useful for debugging
     ; sla a
     ; sla a
@@ -731,6 +766,9 @@ StartSong:
 
     ld a, $f0
     ldh [hMasterVol], a
+    xor a
+    ldh [hSoundStatus], a ; unmute all channels
+    ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
 
 ; Volume envelope states
@@ -764,6 +802,7 @@ UpdateSound:
     cp a, [hl]  ; speed == tick?
     jr z, .next_row
     inc l ; Track_Pattern_RowCount
+    .continue_after_preroll_processing:
     inc l ; Track_Pattern_Row
     inc l ; Track_Pattern_RowStatus
     jp .mixer_tick
@@ -773,6 +812,24 @@ UpdateSound:
     pop hl
     xor a, a
     ld [hli], a ; Track_Tick
+    ldh a, [hSoundPrerollRowsRemaining]
+    or a, a ; is there a preroll to process?
+    jr z, .no_preroll ; skip if not
+    bit 0, b
+    jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
+    bit 1, b
+    jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
+    dec a
+    ldh [hSoundPrerollRowsRemaining], a
+    jr nz, .preroll_not_done
+    ; preroll finished - unmute all channels and carry on!
+    ldh [hSoundStatus], a ; 0
+    jr .no_preroll
+    .preroll_not_done:
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+    jr .continue_after_preroll_processing
+    .no_preroll:
     ld a, [hli] ; Track_Pattern_RowCount
     inc [hl]    ; Track_Pattern_Row
     cp a, [hl]  ; rowCount == row?
@@ -2188,7 +2245,8 @@ Genesis:
     ld a, $80
     ldh [rAUD3ENA], a ; DAC on
 
-    call MainFunc_TitleInit
+    ; TODO: call MainFunc_TitleScreenInit
+    call MainFunc_PlaytestSettingsInit
 
 ; enable interrupts now
 	ld   a, IEF_VBLANK
@@ -2199,6 +2257,9 @@ Genesis:
     jp .InfiniteLoop
 
 GameInit:
+    ld hl, GameScreenTilemap
+    call WriteVramStrings
+
     ld de, GameTiles
     ld hl, $8000
     ld bc, GameTilesEnd - GameTiles
@@ -2215,25 +2276,49 @@ GameInit:
 
     ld hl, song_song
     call StartSong
-    ld a, $0
-    ldh [hSoundStatus], a ; unmute all channels
+    ld a, 46 ; TODO: adjust according to song speed
+    ldh [hSoundPrerollRowsRemaining], a
+
+    ; TODO: derive game behavior flags from difficulty level
+
+    ; TODO: initialize seed based on RAND_MODE:
+    ; - deterministic:
+    ;   Goal: Same song + same difficulty + same chart data ⇒ identical outcomes, every run.
+    ;   seed = hash(song_id, difficulty_id, ruleset_id, optional_user_seed)
+    ; - seeded random:
+    ;   Goal: A given playthrough is internally consistent, but different playthroughs likely differ.
+    ;   seed = hash(song_id, difficulty_id, ruleset_id) XOR (DIV << 8) XOR LY XOR frame_counter
+    ; - full random:
+    ;   Goal: Make outcomes depend on real-time jitter and player timing so runs are not meaningfully reproducible.
+    ;   seed = same as for "seeded random", but then with subsequent stirring per random decision
+    ldh a, [hFrameCounter]
+    ldh [hRandom], a
 
     call InitializeTargetLists
     call InitializeHoldTimerTable
-
-    ; Initialize hit cue
-    ld a, HIGH(SongHitCueStream)
-    ldh [hHitCueStream+1], a
-    ld a, LOW(SongHitCueStream)
-    ldh [hHitCueStream], a
-    xor a
-    ldh [hHitCueProcessingPending], a
-    inc a
-    ldh [hHitCueTimer], a
-    ldh [hHitCueStreamBitCtr], a
+    call InitializeHitCues
 
     ld hl, OnPatternRowChange
     jp SetPatternRowCallback
+
+InitializeHitCues:
+    ; TODO: read from table
+    ld a, HIGH(song_cues)
+    ldh [hHitCueStream+1], a
+    ld a, LOW(song_cues)
+    ldh [hHitCueStream], a
+    xor a
+    ldh [hHitCueProcessingPending], a
+    ldh [hHitCueProgressLo], a
+    ldh [hHitCueProgressHi], a
+    inc a
+    ldh [hHitCueTimer], a
+    ldh [hHitCueStreamBitCtr], a
+    call ReadHitCueStreamByte ; progress increment high
+    ldh [hHitCueProgressHi], a
+    call ReadHitCueStreamByte ; progress increment low
+    ldh [hHitCueProgressLo], a
+    ret
 
 OnPatternRowChange:
     ld a, b
@@ -2388,8 +2473,8 @@ GoMainFunction:
     ldh a, [hMainState]
     rst JumpTable
 dw MainFunc_NoOp        ; 0
-dw MainFunc_TitleInit   ; 1
-dw MainFunc_TitleScreen ; 2
+dw MainFunc_PlaytestSettingsInit   ; 1
+dw MainFunc_PlaytestSettings ; 2
 dw MainFunc_GameInit    ; 3
 dw MainFunc_Gameplay    ; 4
 dw MainFunc_WaitForAllClear ; 5
@@ -2408,15 +2493,22 @@ MainFunc_Delay_TimerTimeout:
     ldh [hMainState], a
     ret
 
-MainFunc_TitleInit:
+MainFunc_PlaytestSettingsInit:
+    ld a, GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED
+    ldh [hGameBehaviorState0], a
+    ld a, $30
+    ldh [hIntensityMax], a
+    xor a
+    ldh [hCurrentPlaytestSetting], a
+
     ; standard palettes
     ld  a, %00011011
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
 
-    ld de, TitleScreenTiles
+    ld de, PlaytestSettingsScreenTiles
     ld hl, $8000
-    ld bc, TitleScreenTilesEnd - TitleScreenTiles
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
     ; Clear tilemap
@@ -2425,8 +2517,14 @@ MainFunc_TitleInit:
     ld bc, $240
     call SetMemory
 
-    ld hl, TitleScreenTilemap
+    ld hl, PlaytestSettingsScreenTilemap
     call WriteVramStrings
+
+    call WriteCurrentPlaytestSettingIndicatorToScreen
+    call WriteIntensityMaxPlaytestSettingToScreen
+    call WriteHoldNotesPlaytestSettingToScreen
+    call WriteRandomNotesPlaytestSettingToScreen
+    call FlushVramBuffer
 
     call HideAllSprites
 
@@ -2436,25 +2534,219 @@ MainFunc_TitleInit:
     ldh [hSoundStatus], a ; mute all channels
 
     ld a, 2
-    ldh [hMainState], a ; wait for Start
+    ldh [hMainState], a ; playtest settings
     call TurnOnLCD
 
-MainFunc_TitleScreen:
+WriteIntensityMaxPlaytestSettingToScreen:
+    ld de, $9851
+    ld c, 1
+    call BeginVramString
+    ldh a, [hIntensityMax]
+    srl a
+    srl a
+    srl a
+    srl a ; divide by 16
+    add a, 1
+    ld [hli], a
+    jp EndVramString
+
+WriteHoldNotesPlaytestSettingToScreen:
+    ld de, $988E
+    ld c, 3
+    call BeginVramString
+    ld a, $19 ; 'O'
+    ld [hli], a
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .holdNotesOff
+    ; hold notes on
+    ld a, $18 ; 'N'
+    ld [hli], a
+    ld a, $00 ; ' '
+    ld [hli], a
+    jp EndVramString
+    .holdNotesOff:
+    ld a, $10 ; 'F'
+    ld [hli], a
+    ld a, $10 ; 'F'
+    ld [hli], a
+    jp EndVramString
+
+WriteRandomNotesPlaytestSettingToScreen:
+    ld de, $98D0
+    ld c, 3
+    call BeginVramString
+    ld a, $19 ; 'O'
+    ld [hli], a
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .randomNotesOff
+    ; random notes on
+    ld a, $18 ; 'N'
+    ld [hli], a
+    ld a, $00 ; ' '
+    ld [hli], a
+    jp EndVramString
+    .randomNotesOff:
+    ld a, $10 ; 'F'
+    ld [hli], a
+    ld a, $10 ; 'F'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentPlaytestSettingIndicatorFromScreen:
+    ld d, $98
+    ldh a, [hCurrentPlaytestSetting]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $41
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+WriteCurrentPlaytestSettingIndicatorToScreen:
+    ld d, $98
+    ldh a, [hCurrentPlaytestSetting]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $41
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_PlaytestSettings:
     ldh a, [hButtonsPressed]
-    and a, PADF_START
-    ret z ; exit if not pressed
+    bit PADB_START, a
+    jr z, .startNotPressed
+    jp .startPressed
+
+    .startNotPressed:
+    bit PADB_UP, a
+    jr nz, .previousSetting
+    bit PADB_DOWN, a
+    jr nz, .nextSetting
+    bit PADB_SELECT, a
+    jr nz, .nextSetting
+    bit PADB_LEFT, a
+    jr nz, .previousValue
+    bit PADB_B, a
+    jr nz, .previousValue
+    bit PADB_RIGHT, a
+    jr nz, .nextValue
+    bit PADB_A, a
+    jr nz, .nextValue
+    ret
+
+    .previousSetting:
+    call EraseCurrentPlaytestSettingIndicatorFromScreen
+    ldh a, [hCurrentPlaytestSetting]
+    or a
+    jr nz, .noWrapToLastSetting
+    ld a, PLAYTEST_SETTINGS_COUNT
+    .noWrapToLastSetting:
+    dec a
+    ldh [hCurrentPlaytestSetting], a
+    jp WriteCurrentPlaytestSettingIndicatorToScreen
+
+    .nextSetting:
+    call EraseCurrentPlaytestSettingIndicatorFromScreen
+    ldh a, [hCurrentPlaytestSetting]
+    inc a
+    cp PLAYTEST_SETTINGS_COUNT
+    jr c, .noWrapToFirstSetting
+    xor a
+    .noWrapToFirstSetting:
+    ldh [hCurrentPlaytestSetting], a
+    jp WriteCurrentPlaytestSettingIndicatorToScreen
+
+    .previousValue:
+    ldh a, [hCurrentPlaytestSetting]
+    cp PLAYTEST_SETTING__INTENSITY_MAX
+    jr z, .decreaseIntensityMax
+    cp PLAYTEST_SETTING__HOLD_NOTES
+    jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES
+    jr z, .toggleRandomNotes
+    ; unhandled setting
+    jp Reset
+
+    .decreaseIntensityMax:
+    ldh a, [hIntensityMax]
+    sub a, $10
+    ldh [hIntensityMax], a
+    jp WriteIntensityMaxPlaytestSettingToScreen
+
+    .nextValue:
+    ldh a, [hCurrentPlaytestSetting]
+    cp PLAYTEST_SETTING__INTENSITY_MAX
+    jr z, .increaseIntensityMax
+    cp PLAYTEST_SETTING__HOLD_NOTES
+    jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES
+    jr z, .toggleRandomNotes
+    ; unhandled setting
+    jp Reset
+
+    .increaseIntensityMax:
+    ldh a, [hIntensityMax]
+    add a, $10
+    ldh [hIntensityMax], a
+    jp WriteIntensityMaxPlaytestSettingToScreen
+
+    .toggleHoldNotes:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    jr z, .turnOffHoldNotes
+    ; turn on hold notes
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    ldh [hGameBehaviorState0], a
+    jp WriteHoldNotesPlaytestSettingToScreen
+    .turnOffHoldNotes:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    ldh [hGameBehaviorState0], a
+    jp WriteHoldNotesPlaytestSettingToScreen
+
+    .toggleRandomNotes:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr nz, .turnOffRandomNotes
+    ; turn on random notes
+    ldh a, [hGameBehaviorState0]
+    set GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    ldh [hGameBehaviorState0], a
+    jp WriteRandomNotesPlaytestSettingToScreen
+    .turnOffRandomNotes:
+    ldh a, [hGameBehaviorState0]
+    res GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    ldh [hGameBehaviorState0], a
+    jp WriteRandomNotesPlaytestSettingToScreen
+
+    .startPressed:
     ld a, 3
     ldh [hMainState], a ; game init
     jp TurnOffLCD
 
 MainFunc_GameInit:
-    ld hl, GameScreenTilemap
-    call WriteVramStrings
-
-    ; initialize seed
-    ldh a, [hFrameCounter]
-    ldh [hRandom], a
-
     call GameInit
 
     ld a, 4
@@ -2504,9 +2796,16 @@ ProcessHitCues:
     ret z ; exit if no processing pending
     dec a
     ldh [hHitCueProcessingPending], a
-    ; set target defaults
+    ; set lane defaults
     xor a
     ld hl, wTargetDurationByLane
+    ld [hli], a
+    ld [hli], a
+    ld [hli], a
+    ld [hl], a
+    ldh [hSuppressedLanes], a
+    ld a, $30
+    ld hl, wLaneIntensities
     ld [hli], a
     ld [hli], a
     ld [hli], a
@@ -2514,28 +2813,24 @@ ProcessHitCues:
     ; process hit cue entry
     ld a, HIT_CUE_BASE_PAYLOAD_WIDTH
     call ReadHitCueStreamBits
-    ; TODO: A = 12 means extended event
-    cp a, 15 ; end of stream?
-    jr z, .endOfStream
-    or a
-    jr z, .20
-    ; TODO: set item = normal for each lane
-    ; TODO: respect the type bits
-    call Prng
-    and a, 15
-    or a
-    jr nz, .10
-    inc a
-    .10:
-    cp a, 12
-    jr c, .20
-    sub a, 4
-    .20:
-    add a, LOW(.LanesSpecifierMasks)
+    cp 12 ; extended payload?
+    jr nc, .extendedPayload
+
+    .processLanesAfterExtensions:
+    push af ; save chord id
+    call SuppressLanesByIntensity
+    pop af ; restore chord id
+    or a, LOW(.ChordIdToLanesBitmask)
     ld l, a
-    ld h, HIGH(.LanesSpecifierMasks)
+    ld h, HIGH(.ChordIdToLanesBitmask)
     ld a, [hl] ; lane bits
     ld b, a
+    ldh a, [hSuppressedLanes]
+    xor a, b
+    and a, b
+    ld b, a ; effective lane bits
+    ; TODO: check if we need to suppress additional lanes due to K_MAX_NOTES_PER_CUE
+        ; they should be resolved using intensities
     xor a ; lane
     .laneLoop:
     srl b ; lane bit into carry
@@ -2561,6 +2856,277 @@ ProcessHitCues:
     ldh [hHitCueTimer], a
     ret
 
+    .extendedPayload:
+    and a, 3 ; lower 2 bits of chord id
+    ld c, a
+    ld a, 2
+    push bc
+    call ReadHitCueStreamBits ; high 2 bits of chord id
+    pop bc
+    sla a
+    sla a
+    or c ; full chord id
+    cp 15 ; end of stream?
+    jp z, .endOfStream
+    ; not end of stream, process all extensions
+    ld c, a ; save chord id
+
+    ; process intensities
+    ld a, 1
+    push bc ; save chord id
+    call ReadHitCueStreamBits ; intensities flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .processRandomization
+    ; set intensities for lanes in chord
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .intensitySingleLaneChord
+    ; handle multi-lane chord
+    .intensityMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; intensity flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have an intensity?
+    ld a, [hli] ; lane index
+    jr z, .skipIntensityForLane
+    ; read and set intensity for this lane
+    push af ; save lane index
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; intensity
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    sla a
+    sla a
+    sla a
+    sla a
+    ld b, a ; intensity << 4
+    pop af ; restore lane index
+    or a, LOW(wLaneIntensities)
+    ld e, a
+    ld d, HIGH(wLaneIntensities)
+    ld a, b
+    ld [de], a ; set intensity for lane
+    .skipIntensityForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .intensityMultiLaneChordLoop
+    jr .processRandomization
+
+    .intensitySingleLaneChord:
+    ld a, [hl] ; lane index
+    push af ; save lane index
+    push bc
+    ld a, 4
+    call ReadHitCueStreamBits ; intensity
+    pop bc
+    sla a
+    sla a
+    sla a
+    sla a
+    ld b, a ; intensity << 4
+    pop af ; restore lane index
+    or a, LOW(wLaneIntensities)
+    ld l, a
+    ld h, HIGH(wLaneIntensities)
+    ld [hl], b ; set intensity for lane
+
+    .processRandomization:
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; randomization flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .processHolds
+    ; process randomization
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .randomizeSingleLaneChord
+    ; handle multi-lane chord
+    .randomizeMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; "apply randomization" flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have randomization?
+    ld a, [hli] ; lane index
+    jr z, .skipRandomizationForLane
+    ; decide if this lane is to be suppressed
+    push af ; save lane index
+    ; if RANDOM_ENABLED is 0, never suppress ( = treat as deterministic lane)
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a ; randomization enabled?
+    jr nz, .considerRandomizationForLane
+    pop af ; restore lane index
+    jr .skipRandomizationForLane
+    .considerRandomizationForLane:
+    ; TODO: if ALLOW_NONE is 0, make sure at least one candidate lane remains
+    ; TODO: if RAND_MODE = "full random", stir the PRNG here
+    call Prng
+    and a, 1 ; 50% chance
+    ld b, a
+    pop af ; restore lane index
+    bit 0, b
+    jr z, .skipRandomizationForLane
+    ; suppress this lane
+    ; compute the lane bitmask in b
+    ld b, 1
+    or a
+    jr z, .randomizeLaneOfMultiLaneChord_10
+    .randomizeLaneOfMultiLaneChord_20:
+    sla b
+    dec a
+    jr nz, .randomizeLaneOfMultiLaneChord_20
+    .randomizeLaneOfMultiLaneChord_10:
+    ldh a, [hSuppressedLanes]
+    or b
+    ldh [hSuppressedLanes], a
+    .skipRandomizationForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .randomizeMultiLaneChordLoop
+    jr .processHolds
+
+    .randomizeSingleLaneChord:
+    ; decide if the lane is to be suppressed
+    ; if RANDOM_ENABLED is 0, never suppress ( = treat as deterministic lane)
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a ; randomization enabled?
+    jr z, .processHolds
+    ; TODO: if ALLOW_NONE is 0, don't suppress
+    ; TODO: if RAND_MODE = "full random", stir the PRNG here
+    call Prng
+    and a, 1 ; 50% chance
+    jr z, .processHolds
+    ; suppress the lane
+    ld a, [hl] ; lane index
+    ; compute the lane bitmask in b
+    ld b, 1
+    or a
+    jr z, .randomizeSingleLaneChord_10
+    .randomizeSingleLaneChord_20:
+    sla b
+    dec a
+    jr nz, .randomizeSingleLaneChord_20
+    .randomizeSingleLaneChord_10:
+    ldh a, [hSuppressedLanes]
+    or b
+    ldh [hSuppressedLanes], a
+
+    .processHolds:
+    ld a, 1
+    push bc ; save chord id
+    call ReadHitCueStreamBits ; holds flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .doneProcessingHolds
+    ; set hold durations for lanes in chord
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .holdSingleLaneChord
+    ; handle multi-lane chord
+    .holdMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; hold flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have a hold?
+    ld a, [hli] ; lane index
+    jr z, .skipHoldForLane
+    ; read and set hold duration for this lane
+    push af ; save lane index
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; hold duration - 1
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    inc a
+    sla a
+    sla a
+    ld b, a ; duration << 2
+    pop af ; restore lane index
+    or a, LOW(wTargetDurationByLane)
+    ld e, a
+    ld d, HIGH(wTargetDurationByLane)
+    ; if holds should be converted to taps, don't set hold duration anyway
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
+    jr z, .skipHoldForLane ; then don't set duration anyway
+    ld a, b
+    ld [de], a ; set hold duration for lane
+    .skipHoldForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .holdMultiLaneChordLoop
+    jr .doneProcessingHolds
+
+    .holdSingleLaneChord:
+    ld a, [hl] ; lane index
+    push af ; save lane index
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; hold duration - 1
+    pop bc ; restore chord id
+    inc a
+    sla a
+    sla a
+    ld b, a ; duration << 2
+    pop af ; restore lane index
+    or a, LOW(wTargetDurationByLane)
+    ld l, a
+    ld h, HIGH(wTargetDurationByLane)
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
+    jr z, .doneProcessingHolds ; then don't set duration anyway
+    ld [hl], b ; set hold duration for lane
+
+    .doneProcessingHolds:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION
+    jr nz, .doneProcessingExtensions
+    call SetUniformHoldDurations
+
+    .doneProcessingExtensions:
+    ld a, c ; chord id
+    jp .processLanesAfterExtensions
+
     .endOfStream:
     ld hl, 0
     call SetPatternRowCallback
@@ -2573,7 +3139,7 @@ ds ((@ + $f) & $fff0) - @
 ENDM
 
 Align16
-.LanesSpecifierMasks:
+.ChordIdToLanesBitmask:
 db %0000 ; 0 - none
 db %0001 ; 1 - left
 db %0010 ; 2 - right
@@ -2587,9 +3153,87 @@ db %1100 ; 9 - B + A
 db %1101 ; 10 - left + B + A
 db %1110 ; 11 - right + B + A
 
+MACRO Align64
+ds ((@ + $3f) & $ffc0) - @
+ENDM
+
+Align64
+.ChordIdToLanesMetadata:
+; number of lanes, lane indices, padding
+db 1,0,0,0
+db 1,1,0,0
+db 1,2,0,0
+db 1,3,0,0
+db 2,0,2,0
+db 2,0,3,0
+db 2,1,2,0
+db 2,1,3,0
+db 2,2,3,0
+db 3,0,2,3
+db 3,1,2,3
+
 Align8
 .HitCueTimerTable:
 db 1,2,4,8,12,16,24,32
+
+SetUniformHoldDurations:
+    ; first pass: find min hold duration among the lanes in the chord
+    ld hl, wTargetDurationByLane
+    ld b, $ff ; best
+    ld d, 4 ; lane counter
+    .findLoop:
+    ld a, [hli]
+    or a
+    jr z, .nextLane
+    cp a, b
+    jr nc, .nextLane
+    ld b, a ; new best
+    .nextLane:
+    dec d
+    jr nz, .findLoop
+    ; second pass: set all hold durations to best
+    ld hl, wTargetDurationByLane
+    ld d, 4 ; lane counter
+    .setLoop:
+    ld a, [hl]
+    or a
+    jr z, .nextLane2
+    ld [hl], b ; set to best
+    .nextLane2:
+    inc l
+    dec d
+    jr nz, .setLoop
+    ret
+
+; Destroys: HL, B
+; Suppresses lanes whose intensity is below hIntensityMax
+SuppressLanesByIntensity:
+    ldh a, [hIntensityMax]
+    ld hl, wLaneIntensities
+    ld b, 0
+    cp [hl] ; lane 0 intensity
+    jr nc, .10
+    set 0, b ; suppress lane 0
+    .10:
+    inc l
+    cp [hl] ; lane 1 intensity
+    jr nc, .20
+    set 1, b ; suppress lane 1
+    .20:
+    inc l
+    cp [hl] ; lane 2 intensity
+    jr nc, .30
+    set 2, b ; suppress lane 2
+    .30:
+    inc l
+    cp [hl] ; lane 3 intensity
+    jr nc, .40
+    set 3, b ; suppress lane 3
+    .40:
+    ldh a, [hSuppressedLanes]
+    or a, b
+    ldh [hSuppressedLanes], a
+    ret
 
 ; A = lane (bits 1..0)
 ; Destroys: A, B, HL, DE
@@ -2615,8 +3259,8 @@ AddTarget:
     ld d, HIGH(wTargetDurationByLane)
     or a, LOW(wTargetDurationByLane)
     ld e, a
-;    ld a, [de] ; duration
-    ld a, 2 << 2 ; TODO: for testing, fixed duration
+    ld a, [de] ; duration
+;    ld a, 2 << 2 ; for testing, fixed hold
     or a, b ; add lane
     ld [hli], a ; Target_State
     xor a
@@ -2678,6 +3322,13 @@ ReadHitCueStreamBits:
     ldh [hHitCueStreamBitCtr], a
     ld a, c ; final result
     ret
+
+; Reads a byte from hit cue stream
+; Returns: A = bits read
+; Destroys: B, C, D, H, L
+ReadHitCueStreamByte:
+    ld a, 8
+    jr ReadHitCueStreamBits
 
 ; Computes hLaneInputPosedge and hLaneInput from hButtonsPressed and hButtonsHeld
 ; Destroys: A, B
@@ -2794,9 +3445,14 @@ ProcessActiveTargets:
     ; hl should point to Target_State
     .moveAndDraw:
     call MoveTarget
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
+    jr z, .isTapTarget
     ld a, [hl] ; Target_State
     and a, $fc ; extended duration?
     jr nz, .isHoldTarget
+    .isTapTarget:
     call DrawTapTarget
     jr .next
     .isHoldTarget:
@@ -3096,6 +3752,13 @@ SweepActiveTargets:
     ldh a, [hSoundStatus]
     and ~3
     ldh [hSoundStatus], a
+    ; set trigger flag (bit 7 of Track_PeriodIndex) for square wave channels
+    push hl
+    ld hl, wTracks + Track_PeriodIndex
+    set 7, [hl]
+    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF
+    set 7, [hl]
+    pop hl
 
     inc l ; Target_PosY_Frac
     inc l ; Target_PosY_Int
@@ -3508,21 +4171,67 @@ Prng:
 
 SECTION "Tile data", ROM0
 
-TitleScreenTiles:
-db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ; blank tile
-incbin "pushstarttiles.bin"
-TitleScreenTilesEnd:
+PlaytestSettingsScreenTiles:
+incbin "playtestsettingsfont.bin"
+PlaytestSettingsScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
+; incbin "progressbartiles.bin"
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
 
-TitleScreenTilemap:
-db $99, $05, 10, $01, $02, $03, $04, $00, $03, $05, $06, $07, $05
+NEWCHARMAP playtestsettings
+CHARMAP " ", $00
+CHARMAP "0", $01
+CHARMAP "1", $02
+CHARMAP "2", $03
+CHARMAP "3", $04
+CHARMAP "4", $05
+CHARMAP "5", $06
+CHARMAP "6", $07
+CHARMAP "7", $08
+CHARMAP "8", $09
+CHARMAP "9", $0A
+CHARMAP "A", $0B
+CHARMAP "B", $0C
+CHARMAP "C", $0D
+CHARMAP "D", $0E
+CHARMAP "E", $0F
+CHARMAP "F", $10
+CHARMAP "G", $11
+CHARMAP "H", $12
+CHARMAP "I", $13
+CHARMAP "J", $14
+CHARMAP "K", $15
+CHARMAP "L", $16
+CHARMAP "M", $17
+CHARMAP "N", $18
+CHARMAP "O", $19
+CHARMAP "P", $1A
+CHARMAP "Q", $1B
+CHARMAP "R", $1C
+CHARMAP "S", $1D
+CHARMAP "T", $1E
+CHARMAP "U", $1F
+CHARMAP "V", $20
+CHARMAP "W", $21
+CHARMAP "X", $22
+CHARMAP "Y", $23
+CHARMAP "Z", $24
+CHARMAP ":", $25
+CHARMAP "*", $26
+CHARMAP "!", $27
+
+PlaytestSettingsScreenTilemap:
+db $98, $42, 14, "INTENSITY MAX:"
+db $98, $82, 11, "HOLD NOTES:"
+db $98, $C2, 13, "RANDOM NOTES:"
+db $99, $A5, 10, "PUSH START"
+db $99, $E6, 8, "TO PLAY!"
 db 0
 
 GameScreenTilemap:
@@ -3531,15 +4240,7 @@ db 0
 
 SECTION "Hit cue streams", ROM0
 
-SongHitCueStream:
-db $0E,$34,$10,$C0,$E3,$41,$0C,$0E,$34,$10,$C0,$E3,$C7,$02,$1C,$10
-db $70,$21,$C1,$07,$02,$1C,$10,$70,$21,$C1,$07,$0F,$06,$38,$78,$31
-db $C3,$C1,$8E,$04,$38,$20,$71,$A3,$43,$8D,$1A,$1C,$68,$D0,$E3,$46
-db $8E,$04,$38,$20,$E0,$43,$82,$0E,$04,$38,$20,$E0,$43,$82,$0E,$1E
-db $0C,$70,$F0,$63,$87,$83,$1C,$08,$70,$41,$C0,$87,$04,$0A,$34,$10
-db $E0,$41,$46,$82,$1A,$08,$58,$51,$C1,$86,$8D,$1A,$34,$68,$D1,$A3
-db $46,$8D,$1A,$34,$68,$D1,$A3,$47,$02,$1C,$10,$28,$D0,$43,$81,$05
-db $1A,$08,$68,$21,$61,$47,$06,$04,$38,$68,$21,$1E
+include "songcues.inc"
 
 SECTION "Song data", ROM0
 
