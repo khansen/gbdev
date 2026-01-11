@@ -43,6 +43,7 @@ def HIT_CUE_BASE_PAYLOAD_WIDTH equ 4
 
 def HIT_START_Y equ 129
 def HIT_EXTENT equ 13
+def HIT_GRACE_EXTENT equ 4
 
 hHitCueStream: dw
 hHitCueStreamBitCtr: db
@@ -53,6 +54,7 @@ hHitCueProgressHi: db
 hHitCueProgressLo: db
 hHitCueProgressIncHi: db
 hHitCueProgressIncLo: db
+def HIT_CUE_MAX_PROGRESS equ 96
 
 ; linked lists
 hFreeTargetsList: db
@@ -75,6 +77,21 @@ hHitLanes: db
 hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
+
+; stats
+hSpawnedChordsCount: dw
+hFullyClearedChordsCount: dw
+hSpawnedTargetsCount: dw
+hTapHitCount: dw
+hTapMissCount: dw
+hHoldHeadHitCount: dw
+hHoldHeadMissCount: dw
+hHoldCompleteCount: dw
+hHoldBreakCount: dw
+hMisPressCount: dw
+hCurrentStreak: dw
+hMaxStreak: dw
+hComputedSongSessionAccuracy: db ; 0..100
 
 hGameBehaviorState0: db
 def GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT          equ 0
@@ -104,6 +121,7 @@ def Target_PosY_Frac rb 1               ; 02
 rsset Target_PosY_Frac
 def Target_HoldTimer rb 1               ; 02
 def Target_PosY_Int  rb 1               ; 03
+; TODO: Target_ChordInstance
 def Target_SIZEOF    rb 0               ; 04
 
 def MAX_TARGETS equ 32
@@ -2247,6 +2265,7 @@ Genesis:
 
     ; TODO: call MainFunc_TitleScreenInit
     call MainFunc_PlaytestSettingsInit
+    ; call MainFunc_SongSessionResultsInit
 
 ; enable interrupts now
 	ld   a, IEF_VBLANK
@@ -2257,9 +2276,6 @@ Genesis:
     jp .InfiniteLoop
 
 GameInit:
-    ld hl, GameScreenTilemap
-    call WriteVramStrings
-
     ld de, GameTiles
     ld hl, $8000
     ld bc, GameTilesEnd - GameTiles
@@ -2273,6 +2289,9 @@ GameInit:
 
     ld hl, GameScreenTilemap
     call WriteVramStrings
+
+    call DrawEmptyProgressBar
+    call FlushVramBuffer
 
     ld hl, song_song
     call StartSong
@@ -2294,12 +2313,232 @@ GameInit:
     ldh a, [hFrameCounter]
     ldh [hRandom], a
 
+    call ResetGameStats
+
     call InitializeTargetLists
     call InitializeHoldTimerTable
     call InitializeHitCues
 
     ld hl, OnPatternRowChange
     jp SetPatternRowCallback
+
+def PROGRESS_BAR_TILES_BASE equ $b0
+
+DrawEmptyProgressBar:
+    ld de, $9801
+    ld c, $4C
+    call BeginVramString
+    ld a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    jp EndVramString
+
+ResetGameStats:
+    xor a
+    ldh [hTapHitCount], a
+    ldh [hTapHitCount+1], a
+    ldh [hTapMissCount], a
+    ldh [hTapMissCount+1], a
+    ldh [hHoldHeadHitCount], a
+    ldh [hHoldHeadHitCount+1], a
+    ldh [hHoldHeadMissCount], a
+    ldh [hHoldHeadMissCount+1], a
+    ldh [hHoldCompleteCount], a
+    ldh [hHoldCompleteCount+1], a
+    ldh [hHoldBreakCount], a
+    ldh [hHoldBreakCount+1], a
+    ldh [hMisPressCount], a
+    ldh [hMisPressCount+1], a
+    ldh [hSpawnedTargetsCount], a
+    ldh [hSpawnedTargetsCount+1], a
+    ldh [hSpawnedChordsCount], a
+    ldh [hSpawnedChordsCount+1], a
+    ldh [hFullyClearedChordsCount], a
+    ldh [hFullyClearedChordsCount+1], a
+    ldh [hCurrentStreak], a
+    ldh [hCurrentStreak+1], a
+    ldh [hMaxStreak], a
+    ldh [hMaxStreak+1], a
+    ret
+
+IncTapHitCount:
+    ldh a, [hTapHitCount]
+    inc a
+    ldh [hTapHitCount], a
+    ret nz
+    ld a, [hTapHitCount+1]
+    inc a
+    ldh [hTapHitCount+1], a
+    ret
+
+IncTapMissCount:
+    ldh a, [hTapMissCount]
+    inc a
+    ldh [hTapMissCount], a
+    ret nz
+    ld a, [hTapMissCount+1]
+    inc a
+    ldh [hTapMissCount+1], a
+    ret
+
+IncHoldHeadHitCount:
+    ldh a, [hHoldHeadHitCount]
+    inc a
+    ldh [hHoldHeadHitCount], a
+    ret nz
+    ld a, [hHoldHeadHitCount+1]
+    inc a
+    ldh [hHoldHeadHitCount+1], a
+    ret
+
+IncHoldHeadMissCount:
+    ldh a, [hHoldHeadMissCount]
+    inc a
+    ldh [hHoldHeadMissCount], a
+    ret nz
+    ld a, [hHoldHeadMissCount+1]
+    inc a
+    ldh [hHoldHeadMissCount+1], a
+    ret
+
+IncHoldCompleteCount:
+    ldh a, [hHoldCompleteCount]
+    inc a
+    ldh [hHoldCompleteCount], a
+    ret nz
+    ldh a, [hHoldCompleteCount+1]
+    inc a
+    ldh [hHoldCompleteCount+1], a
+    ret
+
+IncHoldBreakCount:
+    ldh a, [hHoldBreakCount]
+    inc a
+    ldh [hHoldBreakCount], a
+    ret nz
+    ldh a, [hHoldBreakCount+1]
+    inc a
+    ldh [hHoldBreakCount+1], a
+    ret
+
+IncMisPressCount:
+    ldh a, [hMisPressCount]
+    inc a
+    ldh [hMisPressCount], a
+    ret nz
+    ldh a, [hMisPressCount+1]
+    inc a
+    ldh [hMisPressCount+1], a
+    ret
+
+; HL = Target_State ptr
+IncTapOrHoldHeadMissCount:
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, IncHoldHeadMissCount
+    ; missed a tap target
+    jr IncTapMissCount
+
+IncSpawnedTargetsCount:
+    ldh a, [hSpawnedTargetsCount]
+    inc a
+    ldh [hSpawnedTargetsCount], a
+    ret nz
+    ldh a, [hSpawnedTargetsCount+1]
+    inc a
+    ldh [hSpawnedTargetsCount+1], a
+    ret
+
+IncSpawnedChordsCount:
+    ldh a, [hSpawnedChordsCount]
+    inc a
+    ldh [hSpawnedChordsCount], a
+    ret nz
+    ldh a, [hSpawnedChordsCount+1]
+    inc a
+    ldh [hSpawnedChordsCount+1], a
+    ret
+
+IncFullyClearedChordsCount:
+    ldh a, [hFullyClearedChordsCount]
+    inc a
+    ldh [hFullyClearedChordsCount], a
+    ret nz
+    ld a, [hFullyClearedChordsCount+1]
+    inc a
+    ldh [hFullyClearedChordsCount+1], a
+    ret
+
+ResetCurrentStreak:
+    xor a
+    ldh [hCurrentStreak], a
+    ldh [hCurrentStreak+1], a
+    ret
+
+IncCurrentStreak:
+    ldh a, [hCurrentStreak]
+    inc a
+    ldh [hCurrentStreak], a
+    jr nz, UpdateMaxStreak
+    ; overflow, increment hi byte
+    ldh a, [hCurrentStreak+1]
+    inc a
+    ldh [hCurrentStreak+1], a
+    ; fallthrough
+
+; Copies current streak to max streak if current > max
+UpdateMaxStreak:
+    push hl
+    ldh a, [hCurrentStreak+1]
+    ld h, a
+    ldh a, [hCurrentStreak]
+    ld l, a
+    ldh a, [hMaxStreak+1]
+    cp a, h
+    jr c, .update_max
+    ldh a, [hMaxStreak]
+    cp a, l
+    jr nc, .no_update
+    .update_max:
+    ld a, h
+    ldh [hMaxStreak+1], a
+    ld a, l
+    ldh [hMaxStreak], a
+    .no_update:
+    pop hl
+    ret
+
+IncHitCueProgress:
+    ldh a, [hHitCueProgressLo]
+    ld b, a
+    ldh a, [hHitCueProgressIncLo]
+    add a, b
+    ldh [hHitCueProgressLo], a
+    ldh a, [hHitCueProgressHi]
+    ld b, a
+    ldh a, [hHitCueProgressIncHi]
+    adc a, b
+    ldh [hHitCueProgressHi], a
+    cp a, b
+    ret z ; return if no need to draw progress bar update
+    ; draw progress bar update
+    push af
+    dec a
+    srl a
+    srl a
+    srl a
+    add a, $01
+    ld e, a
+    ld d, $98
+    ld c, 1
+    call BeginVramString
+    pop af
+    and a, 7
+    jr nz, .10
+    or a, 8 ; full tile
+    .10:
+    add a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    jp EndVramString
 
 InitializeHitCues:
     ; TODO: read from table
@@ -2315,9 +2554,9 @@ InitializeHitCues:
     ldh [hHitCueTimer], a
     ldh [hHitCueStreamBitCtr], a
     call ReadHitCueStreamByte ; progress increment high
-    ldh [hHitCueProgressHi], a
+    ldh [hHitCueProgressIncHi], a
     call ReadHitCueStreamByte ; progress increment low
-    ldh [hHitCueProgressLo], a
+    ldh [hHitCueProgressIncLo], a
     ret
 
 OnPatternRowChange:
@@ -2412,9 +2651,9 @@ TickTimer:
     ldh a, [hTimerHi]
     dec a
     jr nz, .noTimeoutHi
-    ld a, [hTimerCallback]
+    ldh a, [hTimerCallback]
     ld l, a
-    ld a, [hTimerCallback+1]
+    ldh a, [hTimerCallback+1]
     ld h, a
     jp hl
     .noTimeoutHi:
@@ -2480,6 +2719,8 @@ dw MainFunc_Gameplay    ; 4
 dw MainFunc_WaitForAllClear ; 5
 dw MainFunc_Delay       ; 6
 dw MainFunc_GameFinished ; 7
+dw MainFunc_SongSessionResultsInit ; 8
+dw MainFunc_SongSessionResults ; 9
 
 MainFunc_NoOp:
     ret
@@ -2520,10 +2761,11 @@ MainFunc_PlaytestSettingsInit:
     ld hl, PlaytestSettingsScreenTilemap
     call WriteVramStrings
 
-    call WriteCurrentPlaytestSettingIndicatorToScreen
-    call WriteIntensityMaxPlaytestSettingToScreen
-    call WriteHoldNotesPlaytestSettingToScreen
-    call WriteRandomNotesPlaytestSettingToScreen
+    ; Write initial settings to screen
+    call PrintCurrentPlaytestSettingIndicator
+    call PrintIntensityMaxPlaytestSetting
+    call PrintHoldNotesPlaytestSetting
+    call PrintRandomNotesPlaytestSetting
     call FlushVramBuffer
 
     call HideAllSprites
@@ -2535,9 +2777,9 @@ MainFunc_PlaytestSettingsInit:
 
     ld a, 2
     ldh [hMainState], a ; playtest settings
-    call TurnOnLCD
+    jp TurnOnLCD
 
-WriteIntensityMaxPlaytestSettingToScreen:
+PrintIntensityMaxPlaytestSetting:
     ld de, $9851
     ld c, 1
     call BeginVramString
@@ -2550,7 +2792,7 @@ WriteIntensityMaxPlaytestSettingToScreen:
     ld [hli], a
     jp EndVramString
 
-WriteHoldNotesPlaytestSettingToScreen:
+PrintHoldNotesPlaytestSetting:
     ld de, $988E
     ld c, 3
     call BeginVramString
@@ -2573,7 +2815,7 @@ WriteHoldNotesPlaytestSettingToScreen:
     ld [hli], a
     jp EndVramString
 
-WriteRandomNotesPlaytestSettingToScreen:
+PrintRandomNotesPlaytestSetting:
     ld de, $98D0
     ld c, 3
     call BeginVramString
@@ -2595,7 +2837,7 @@ WriteRandomNotesPlaytestSettingToScreen:
     ld [hli], a
     jp EndVramString
 
-EraseCurrentPlaytestSettingIndicatorFromScreen:
+EraseCurrentPlaytestSettingIndicator:
     ld d, $98
     ldh a, [hCurrentPlaytestSetting]
     sla a
@@ -2612,7 +2854,7 @@ EraseCurrentPlaytestSettingIndicatorFromScreen:
     ld [hli], a
     jp EndVramString
 
-WriteCurrentPlaytestSettingIndicatorToScreen:
+PrintCurrentPlaytestSettingIndicator:
     ld d, $98
     ldh a, [hCurrentPlaytestSetting]
     sla a
@@ -2653,7 +2895,7 @@ MainFunc_PlaytestSettings:
     ret
 
     .previousSetting:
-    call EraseCurrentPlaytestSettingIndicatorFromScreen
+    call EraseCurrentPlaytestSettingIndicator
     ldh a, [hCurrentPlaytestSetting]
     or a
     jr nz, .noWrapToLastSetting
@@ -2661,10 +2903,10 @@ MainFunc_PlaytestSettings:
     .noWrapToLastSetting:
     dec a
     ldh [hCurrentPlaytestSetting], a
-    jp WriteCurrentPlaytestSettingIndicatorToScreen
+    jp PrintCurrentPlaytestSettingIndicator
 
     .nextSetting:
-    call EraseCurrentPlaytestSettingIndicatorFromScreen
+    call EraseCurrentPlaytestSettingIndicator
     ldh a, [hCurrentPlaytestSetting]
     inc a
     cp PLAYTEST_SETTINGS_COUNT
@@ -2672,7 +2914,7 @@ MainFunc_PlaytestSettings:
     xor a
     .noWrapToFirstSetting:
     ldh [hCurrentPlaytestSetting], a
-    jp WriteCurrentPlaytestSettingIndicatorToScreen
+    jp PrintCurrentPlaytestSettingIndicator
 
     .previousValue:
     ldh a, [hCurrentPlaytestSetting]
@@ -2689,7 +2931,7 @@ MainFunc_PlaytestSettings:
     ldh a, [hIntensityMax]
     sub a, $10
     ldh [hIntensityMax], a
-    jp WriteIntensityMaxPlaytestSettingToScreen
+    jp PrintIntensityMaxPlaytestSetting
 
     .nextValue:
     ldh a, [hCurrentPlaytestSetting]
@@ -2706,7 +2948,7 @@ MainFunc_PlaytestSettings:
     ldh a, [hIntensityMax]
     add a, $10
     ldh [hIntensityMax], a
-    jp WriteIntensityMaxPlaytestSettingToScreen
+    jp PrintIntensityMaxPlaytestSetting
 
     .toggleHoldNotes:
     ldh a, [hGameBehaviorState0]
@@ -2718,13 +2960,13 @@ MainFunc_PlaytestSettings:
     and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
     or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
     ldh [hGameBehaviorState0], a
-    jp WriteHoldNotesPlaytestSettingToScreen
+    jp PrintHoldNotesPlaytestSetting
     .turnOffHoldNotes:
     ldh a, [hGameBehaviorState0]
     and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
     or GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
     ldh [hGameBehaviorState0], a
-    jp WriteHoldNotesPlaytestSettingToScreen
+    jp PrintHoldNotesPlaytestSetting
 
     .toggleRandomNotes:
     ldh a, [hGameBehaviorState0]
@@ -2734,12 +2976,12 @@ MainFunc_PlaytestSettings:
     ldh a, [hGameBehaviorState0]
     set GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
     ldh [hGameBehaviorState0], a
-    jp WriteRandomNotesPlaytestSettingToScreen
+    jp PrintRandomNotesPlaytestSetting
     .turnOffRandomNotes:
     ldh a, [hGameBehaviorState0]
     res GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
     ldh [hGameBehaviorState0], a
-    jp WriteRandomNotesPlaytestSettingToScreen
+    jp PrintRandomNotesPlaytestSetting
 
     .startPressed:
     ld a, 3
@@ -2782,8 +3024,8 @@ MainFunc_WaitForAllClear:
     jp SetTimerWithNextStateTimeout
 
 MainFunc_GameFinished:
-    ld a, 1
-    ldh [hMainState], a ; back to title init
+    ld a, 8
+    ldh [hMainState], a ; to song session results init
     jp TurnOffLCD
 
 MACRO Align8
@@ -2813,12 +3055,15 @@ ProcessHitCues:
     ; process hit cue entry
     ld a, HIT_CUE_BASE_PAYLOAD_WIDTH
     call ReadHitCueStreamBits
+    or a
+    jr z, .setNextTimer ; it's just a delay, no targets to spawn
     cp 12 ; extended payload?
     jr nc, .extendedPayload
 
     .processLanesAfterExtensions:
     push af ; save chord id
     call SuppressLanesByIntensity
+    call IncHitCueProgress ; make sure progress is updated even if no targets are spawned
     pop af ; restore chord id
     or a, LOW(.ChordIdToLanesBitmask)
     ld l, a
@@ -2828,6 +3073,8 @@ ProcessHitCues:
     ldh a, [hSuppressedLanes]
     xor a, b
     and a, b
+    jr z, .setNextTimer ; no lanes to spawn
+
     ld b, a ; effective lane bits
     ; TODO: check if we need to suppress additional lanes due to K_MAX_NOTES_PER_CUE
         ; they should be resolved using intensities
@@ -2838,6 +3085,7 @@ ProcessHitCues:
     push af ; save lane
     push bc ; save lane bits
     call AddTarget
+    call IncSpawnedTargetsCount
     pop bc ; restore lane bits
     pop af ; restore lane
     .nextLane:
@@ -2845,7 +3093,9 @@ ProcessHitCues:
     cp 4    ; done all lanes?
     jr nz, .laneLoop
 
-    ; set next timer
+    call IncSpawnedChordsCount
+
+    .setNextTimer:
     ld a, HIT_CUE_DELAY_WIDTH
     call ReadHitCueStreamBits
     ; map value to timer
@@ -3132,6 +3382,11 @@ ProcessHitCues:
     call SetPatternRowCallback
     ld a, 5
     ldh [hMainState], a ; wait for all clear
+    .ceilProgress:
+    call IncHitCueProgress
+    ldh a, [hHitCueProgressHi]
+    cp HIT_CUE_MAX_PROGRESS
+    jr c, .ceilProgress
     ret
 
 MACRO Align16
@@ -3423,6 +3678,7 @@ ProcessActiveTargets:
     ld a, [hl-] ; Target_PosY_Int
     dec l ; Target_State
     sub HIT_START_Y
+    ; TODO: if not hittable, check if it's inside grace window ("nearly hittable")
     jr c, .moveAndDraw ; not hittable
     sub HIT_EXTENT
     jr nc, .missed
@@ -3445,14 +3701,10 @@ ProcessActiveTargets:
     ; hl should point to Target_State
     .moveAndDraw:
     call MoveTarget
-    ldh a, [hGameBehaviorState0]
-    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
-    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
-    jr z, .isTapTarget
     ld a, [hl] ; Target_State
     and a, $fc ; extended duration?
     jr nz, .isHoldTarget
-    .isTapTarget:
+    ; is a tap target
     call DrawTapTarget
     jr .next
     .isHoldTarget:
@@ -3477,9 +3729,9 @@ ProcessActiveTargets:
     .missed:
     ; missing a normal target is punished - if player(s) alive
     ; TODO:
-;  + jsr inc_missed_count
 ;    jsr reset_points_level
-;    jsr reset_streak
+    call IncTapOrHoldHeadMissCount
+    call ResetCurrentStreak
 ;    jsr dec_vu_level
 ;  + lda miss_damage
 ;    jsr sub_energy_with_pain
@@ -3696,13 +3948,18 @@ CheckForErrors:
     and a, b
     ldh [hErrorLanes], a
     ret z ; exit if no errors
+    .misPressesLoop:
+    srl a
+    jr nc, .10
+    ; mis-press in this lane
+    push af
+    call IncMisPressCount
+    pop af
+    .10:
+    jr nz, .misPressesLoop
     ; TODO
 ;    jsr deal_error_pain
-;    jsr inc_error_count
-;    jsr reset_points_level
-;    jsr reset_streak
-;    jsr dec_vu_level
-    ret
+    jp ResetCurrentStreak
 
 ; ProcessActiveTargets() helper function.
 ; Moves active targets that were hit either to the hit list (duration=1) or held list (duration>1).
@@ -3768,6 +4025,9 @@ SweepActiveTargets:
     ld a, [hl-] ; Target_State
     and a, $fc ; extended duration?
     jr nz, .isHeldTarget
+    ; it's a tap target
+    call IncTapHitCount
+    call IncCurrentStreak
     call MoveActiveTargetToHitList
     ld l, a ; Target_Next
     jr .loop
@@ -3786,6 +4046,7 @@ SweepActiveTargets:
     ld [hl-], a ; Target_HoldTimer
     dec l ; Target_Next
 
+    call IncHoldHeadHitCount
     call MoveActiveTargetToHeldList
     ld l, a ; Target_Next
     jr .loop
@@ -4022,6 +4283,8 @@ ProcessHeldTargets:
 
     ; no longer held - move held target to missed list (TODO: decide on scoring)
     ; TODO: turn off sound channels (like we do for tap misses)?
+    call IncHoldBreakCount
+    call ResetCurrentStreak
     ; clear timer
     xor a
     ld [hl-], a ; Target_HoldTimer
@@ -4045,6 +4308,9 @@ ProcessHeldTargets:
     jr .loop
 
     .timerExpired:
+    ; hold complete
+    call IncHoldCompleteCount
+    call IncCurrentStreak
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
@@ -4169,6 +4435,547 @@ Prng:
     ldh [hRandom], a
     ret
 
+
+MainFunc_SongSessionResultsInit:
+    ; standard palettes
+    ld  a, %00011011
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    ; Clear tilemap
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    call SetMemory
+
+    ld hl, SongSessionResultsScreenTilemap
+    call WriteVramStrings
+
+    call ComputeSongSessionAccuracy
+    call PrintSongSessionResults
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+
+    ld a, 9
+    ldh [hMainState], a ; song session results
+    jp TurnOnLCD
+
+MainFunc_SongSessionResults:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    ret z ; start not pressed
+    ; start pressed
+    ld a, 1
+    ldh [hMainState], a ; playtest settings init
+    jp TurnOffLCD
+
+; Returns: DE = hit_notes (tap_hit_count + hold_complete_count)
+ComputeHitNotes:
+    ldh a, [hTapHitCount]
+    ld e, a
+    ldh a, [hHoldCompleteCount]
+    add a, e
+    ld e, a
+    ldh a, [hTapHitCount+1]
+    ld d, a
+    ldh a, [hHoldCompleteCount+1]
+    adc a, d
+    ld d, a
+    ret
+
+PrintSongSessionHitNotesResult:
+    ld de, $988E
+    ld c, 5
+    call BeginVramString
+    call ComputeHitNotes
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMissesResult:
+    ld de, $98CE
+    ld c, 5
+    call BeginVramString
+    ; misses = tap_miss_count + hold_head_miss_count + hold_break_count
+    ldh a, [hTapMissCount]
+    ld e, a
+    ldh a, [hHoldHeadMissCount]
+    add a, e
+    ld e, a
+    ldh a, [hTapMissCount+1]
+    ld d, a
+    ldh a, [hHoldHeadMissCount+1]
+    adc a, d
+    ld d, a
+    ldh a, [hHoldBreakCount]
+    add a, e
+    ld e, a
+    ldh a, [hHoldBreakCount+1]
+    adc a, d
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMisPressesResult:
+    ld de, $990E
+    ld c, 5
+    call BeginVramString
+    ldh a, [hMisPressCount]
+    ld e, a
+    ldh a, [hMisPressCount+1]
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMaxStreakResult:
+    ld de, $994E
+    ld c, 5
+    call BeginVramString
+    ldh a, [hMaxStreak]
+    ld e, a
+    ldh a, [hMaxStreak+1]
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+ComputeSongSessionAccuracy:
+    call ComputeHitNotes
+    ld b, d
+    ld c, e
+    ld a, 100
+    call MulU16xU8 ; hit_notes * 100 -> E:HL
+    ld a, l
+    ld [wNum24+0], a
+    ld a, h
+    ld [wNum24+1], a
+    ld a, e
+    ld [wNum24+2], a
+    ldh a, [hSpawnedTargetsCount]
+    ld c, a
+    ldh a, [hSpawnedTargetsCount+1]
+    ld b, a
+    call DivU24ByU16 ; (hit_notes * 100) / spawned_targets_count -> HL
+    ld a, l
+    ldh [hComputedSongSessionAccuracy], a
+    ret
+
+PrintSongSessionAccuracyResult:
+    ld de, $998C
+    ld c, 3
+    call BeginVramString
+    ldh a, [hComputedSongSessionAccuracy]
+    call PrintU8Dec_A
+    jp EndVramString
+
+PrintSongSessionRankResult:
+    ld de, $99EC
+    ld c, 1
+    call BeginVramString
+    ldh a, [hComputedSongSessionAccuracy]
+    cp 98
+    jr nc, .rankS
+    cp 92
+    jr nc, .rankA
+    cp 85
+    jr nc, .rankB
+    cp 75
+    jr nc, .rankC
+    ; rank D
+    ld a, $0E
+    jr .print
+    .rankS:
+    ld a, $1D
+    jr .print
+    .rankA:
+    ld a, $0B
+    jr .print
+    .rankB:
+    ld a, $0C
+    jr .print
+    .rankC:
+    ld a, $0D
+    .print:
+    ld [hli], a
+    jp EndVramString
+
+PrintSongSessionResults:
+    call PrintSongSessionHitNotesResult
+    call PrintSongSessionMissesResult
+    call PrintSongSessionMisPressesResult
+    call PrintSongSessionMaxStreakResult
+    call PrintSongSessionAccuracyResult
+    call PrintSongSessionRankResult
+    jp FlushVramBuffer
+
+
+SECTION "MulScratch", WRAM0
+wMulA:   ds 1
+wMulHi:  ds 1
+wMulCnt: ds 1
+
+SECTION "Multiplication", ROM0
+; ------------------------------------------------------------
+; MulU16xU8
+;   Unsigned multiply: (BC * A) -> DE:HL
+;
+; IN:
+;   BC = multiplicand (u16)
+;   A  = multiplier   (u8)
+;
+; OUT:
+;   E:HL = 24-bit product
+;
+; CLOBBERS:
+;   AF, BC, DE, HL
+; ------------------------------------------------------------
+MulU16xU8:
+    ld [wMulA], a
+
+    xor a
+    ld e, a
+    ld h, a
+    ld l, a
+    ld [wMulHi], a
+
+    ld a, 8
+.loop:
+    ld [wMulCnt], a
+    ; multiplier >>= 1, old bit0 -> carry
+    ld a, [wMulA]
+    srl a
+    ld [wMulA], a
+    jr nc, .skip_add
+
+    add hl, bc
+
+    ; E += wMulHi + carry
+    ld a, [wMulHi]
+    ld d, a
+    ld a, e
+    adc a, d
+    ld e, a
+
+.skip_add:
+    ; multiplicand <<= 1 across (wMulHi:BC)
+    sla c
+    rl  b
+    ld a, [wMulHi]
+    rl  a
+    ld [wMulHi], a
+
+    ; counter--
+    ld a, [wMulCnt]
+    dec a
+    jr nz, .loop
+    ret
+
+
+SECTION "Division scratch", WRAM0
+
+wNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
+wRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
+
+SECTION "Division", ROM0
+
+; ------------------------------------------------------------
+; DivU24ByU16
+;   Unsigned divide: wNum24 / BC
+; IN:
+;   wNum24 = 24-bit numerator (little-endian)
+;   BC     = 16-bit divisor (BC != 0)
+; OUT:
+;   HL     = 16-bit quotient
+;   wRem16 = 16-bit remainder (optional use)
+; CLOBBERS:
+;   AF, BC, DE, HL
+; ------------------------------------------------------------
+DivU24ByU16:
+    xor a
+    ld h, a
+    ld l, a              ; quotient = 0
+
+    ld [wRem16+0], a
+    ld [wRem16+1], a     ; remainder = 0
+
+    ld d, 24
+.loop:
+    ; Shift remainder left by 1
+    ld a, [wRem16+0]
+    sla a
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    rl a
+    ld [wRem16+1], a
+
+    ; Shift numerator left by 1, MSB goes into carry
+    ; (wNum24 <<= 1), carry after last RL is old bit23
+    ld a, [wNum24+0]
+    sla a
+    ld [wNum24+0], a
+    ld a, [wNum24+1]
+    rl  a
+    ld [wNum24+1], a
+    ld a, [wNum24+2]
+    rl  a
+    ld [wNum24+2], a     ; carry now holds old bit23
+
+    ; Bring that carry bit into remainder LSB
+    ld a, [wRem16+0]
+    adc a, 0             ; add carry
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    adc a, 0
+    ld [wRem16+1], a
+
+    ; quotient <<= 1
+    add hl, hl
+
+    ; if remainder >= divisor: remainder -= divisor; quotient |= 1
+    ld a, [wRem16+1]
+    cp b
+    jr c, .no_sub
+    jr nz, .do_sub
+    ld a, [wRem16+0]
+    cp c
+    jr c, .no_sub
+
+.do_sub:
+    ; remainder -= BC
+    ld a, [wRem16+0]
+    sub c
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    sbc b
+    ld [wRem16+1], a
+
+    inc l                ; set low bit of quotient
+
+.no_sub:
+    dec d
+    jr nz, .loop
+    ret
+
+
+; ============================================================
+; Decimal printing (GBZ80 / RGBDS)
+; - Output pointer: HL (writes tile IDs, inc HL)
+; - Digits contiguous: '0' = $01 ... '9' = $0A
+; - Space tile: $00
+; ============================================================
+
+DEF DIGIT_TILE_0 EQU $01
+DEF SPACE_TILE   EQU $00
+
+; -------------------------
+; ROM tables (powers of 10)
+; -------------------------
+SECTION "Decimal tables", ROM0
+
+; 10^4 .. 10^0 (16-bit)
+Pow10_16:
+    dw 10000
+    dw 1000
+    dw 100
+    dw 10
+    dw 1
+
+SECTION "Decimal scratch", WRAM0
+
+wPrintedAny: ds 1    ; 0/1
+wDigit:      ds 1    ; current digit 0..9
+
+wU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
+
+; -------------------------
+; Output helpers
+; -------------------------
+SECTION "Decimal print", ROM0
+
+; ============================================================
+; PrintU16Dec_DE
+;   DE = unsigned 16-bit value (0..65535)
+;   HL = output pointer
+; Clobbers: AF,BC,DE,HL
+; ============================================================
+PrintU16Dec_DE:
+    ; Store remainder
+    ld a, e
+    ld [wU16+0], a
+    ld a, d
+    ld [wU16+1], a
+
+    ld de, Pow10_16
+    ld b, 5              ; number of places (10^4..10^0)
+
+    xor a
+    ld [wPrintedAny], a
+
+.u16_place_loop:
+    push hl ; save output pointer
+    ; Load power into H:L (table is little-endian)
+    ld a, [de]           ; lo
+    inc de
+    ld l, a
+    ld a, [de]           ; hi
+    inc de
+    ld h, a              ; HL = power
+
+    push de ; save Pow10_16 pointer
+
+    ; Load current value into D:E
+    ld a, [wU16+0]
+    ld e, a
+    ld a, [wU16+1]
+    ld d, a
+
+    xor a
+
+.u16_sub_loop:
+    ld [wDigit], a
+    ; if (DE < HL) break
+    ld a, d
+    cp h
+    jr c, .u16_digit_done
+    jr nz, .u16_do_sub
+    ld a, e
+    cp l
+    jr c, .u16_digit_done
+
+.u16_do_sub:
+    ; DE -= HL
+    ld a, e
+    sub l
+    ld e, a
+    ld a, d
+    sbc h
+    ld d, a
+
+    ; digit++
+    ld a, [wDigit]
+    inc a
+    jr .u16_sub_loop
+
+.u16_digit_done:
+    ; Store remainder back
+    ld a, e
+    ld [wU16+0], a
+    ld a, d
+    ld [wU16+1], a
+
+    pop de ; restore Pow10_16 pointer
+    pop hl ; restore output pointer
+
+    ; ---- Fixed width: leading SPACES until first non-zero digit,
+    ;      but always print at least one digit on last place.
+    ld a, [wDigit]
+    or a
+    jr nz, .u16_fixed_print_digit
+    ld a, [wPrintedAny]
+    or a
+    jr nz, .u16_fixed_print_digit
+    ld a, b
+    cp 1
+    jr z, .u16_fixed_print_digit
+
+    ; leading space
+    ld a, SPACE_TILE
+    ld [hli], a
+    jr .u16_next_place
+
+.u16_fixed_print_digit:
+    ld a, 1
+    ld [wPrintedAny], a
+    ld a, [wDigit]
+    add a, DIGIT_TILE_0
+    ld [hli], a
+
+.u16_next_place:
+    dec b
+    jr nz, .u16_place_loop
+    ret
+
+
+; ============================================================
+; PrintU8Dec_A
+;   A  = unsigned value (0..100)
+;   HL = output pointer
+; Prints 3 chars, right-aligned, leading spaces
+;
+; Example:
+;   0   -> "  0"
+;   5   -> "  5"
+;   42  -> " 42"
+;   100 -> "100"
+;
+; Clobbers: AF,BC,D
+; ============================================================
+PrintU8Dec_A:
+    ld b, a          ; B = remainder
+    xor a
+    ld [wPrintedAny], a
+
+    ld c, 100
+    call .PrintDigitU8
+    ld c, 10
+    call .PrintDigitU8
+    ld c, 1
+    ; fall through
+
+; ------------------------------------------------------------
+; .PrintDigitU8
+;   B = remainder
+;   C = place value (100, 10, or 1)
+; ------------------------------------------------------------
+.PrintDigitU8:
+    ld d, 0            ; D = digit = 0
+
+.sub_loop:
+    ld a, b
+    sub c
+    jr c, .done
+    ld b, a
+    inc d           ; digit++
+    jr .sub_loop
+
+.done:
+    ; D = digit
+    ; B = new remainder
+
+    ; decide space vs digit
+    ld a, d
+    or a
+    jr nz, .print_digit
+    ld a, [wPrintedAny]
+    or a
+    jr nz, .print_digit
+    ld a, c
+    bit 0, c
+    jr nz, .print_digit   ; always print last digit
+
+    ; leading space
+    ld a, SPACE_TILE
+    ld [hli], a
+    ret
+
+.print_digit:
+    ld a, 1
+    ld [wPrintedAny], a
+    ld a, d
+    add a, DIGIT_TILE_0
+    ld [hli], a
+    ret
+
+
 SECTION "Tile data", ROM0
 
 PlaytestSettingsScreenTiles:
@@ -4177,9 +4984,9 @@ PlaytestSettingsScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
-; incbin "progressbartiles.bin"
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
+incbin "progressbartiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
@@ -4225,6 +5032,8 @@ CHARMAP "Z", $24
 CHARMAP ":", $25
 CHARMAP "*", $26
 CHARMAP "!", $27
+CHARMAP "-", $28
+CHARMAP "%", $29
 
 PlaytestSettingsScreenTilemap:
 db $98, $42, 14, "INTENSITY MAX:"
@@ -4232,6 +5041,17 @@ db $98, $82, 11, "HOLD NOTES:"
 db $98, $C2, 13, "RANDOM NOTES:"
 db $99, $A5, 10, "PUSH START"
 db $99, $E6, 8, "TO PLAY!"
+db 0
+
+SongSessionResultsScreenTilemap:
+db $98, $26, 7, "RESULTS"
+db $98, $82, 9, "HIT NOTES"
+db $98, $C2, 6, "MISSES"
+db $99, $02, 11, "MIS-PRESSES"
+db $99, $42, 10, "MAX STREAK"
+db $99, $82, 8, "ACCURACY"
+db $99, $8F, 1, "%"
+db $99, $E6, 4, "RANK"
 db 0
 
 GameScreenTilemap:
