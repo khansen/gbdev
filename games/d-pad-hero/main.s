@@ -2283,6 +2283,7 @@ Genesis:
 SetupCurrentSong:
     ldh a, [hCurrentSong]
     sla a
+    sla a ; * 4 (each SongDescriptor is 4 bytes)
     add a, LOW(SongDescriptors)
     ld l, a
     ld a, HIGH(SongDescriptors)
@@ -2299,7 +2300,28 @@ SetupCurrentSong:
     pop af
     ld l, a
     call StartSong
-    ld a, 46 ; TODO: adjust according to song speed
+    ld a, [wTracks + Track_Speed]
+    cp 5
+    jr z, .speed_5
+    cp 3
+    jr z, .speed_3
+    cp 4
+    jr z, .speed_4
+    cp 6
+    jr z, .speed_6
+    jp Reset ; TODO: adjust according to song speed
+    .speed_3:
+    ld a, 46
+    jr .set_preroll_rows
+    .speed_4:
+    ld a, 35
+    jr .set_preroll_rows
+    .speed_6:
+    ld a, 24
+    jr .set_preroll_rows
+    .speed_5:
+    ld a, 28
+    .set_preroll_rows:
     ldh [hSoundPrerollRowsRemaining], a
     ret
 
@@ -5174,7 +5196,7 @@ CHARMAP "%", $29
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
-db $99, $43, 9, "SOMETHING"
+db $99, $43, 8, "PARADISE"
 db 0
 
 PlaytestSettingsScreenTilemap:
@@ -5203,14 +5225,16 @@ db 0
 SECTION "Hit cue streams", ROM0
 
 include "whiskeycues.inc"
+include "paradisecues.inc"
 
 SECTION "Song data", ROM0
 
 INCLUDE "whiskeysong.s"
+INCLUDE "paradisesong.s"
 INCLUDE "silentsong.s"
 
 SECTION "Song descriptors", ROM0
 
 SongDescriptors:
 dw whiskey_cues, whiskey_song
-dw whiskey_cues, whiskey_song
+dw paradise_cues, paradise_song

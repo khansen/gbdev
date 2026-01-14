@@ -16,6 +16,9 @@ $(PROGRAM).o: main.s \
 	whiskeysong.s \
 	whiskeysong.inc \
 	whiskeycues.inc \
+	paradisesong.s \
+	paradisesong.inc \
+	paradisecues.inc \
 	silentsong.s \
 	silentsong.inc \
 	hardware.inc \
