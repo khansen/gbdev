@@ -78,6 +78,9 @@ hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
 
+def SONG_COUNT equ 2
+hCurrentSong: db
+
 ; stats
 hSpawnedChordsCount: dw
 hFullyClearedChordsCount: dw
@@ -2264,7 +2267,8 @@ Genesis:
     ldh [rAUD3ENA], a ; DAC on
 
     ; TODO: call MainFunc_TitleScreenInit
-    call MainFunc_PlaytestSettingsInit
+    call MainFunc_SongSelectionInit
+    ; call MainFunc_PlaytestSettingsInit
     ; call MainFunc_SongSessionResultsInit
 
 ; enable interrupts now
@@ -2274,6 +2278,30 @@ Genesis:
 .InfiniteLoop:
     halt
     jp .InfiniteLoop
+
+
+SetupCurrentSong:
+    ldh a, [hCurrentSong]
+    sla a
+    add a, LOW(SongDescriptors)
+    ld l, a
+    ld a, HIGH(SongDescriptors)
+    adc a, 0
+    ld h, a
+    ld a, [hli] ; hit cue stream lo
+    ldh [hHitCueStream], a
+    ld a, [hli] ; hit cue stream hi
+    ldh [hHitCueStream+1], a
+    ld a, [hli] ; song lo
+    push af
+    ld a, [hl]  ; song hi
+    ld h, a
+    pop af
+    ld l, a
+    call StartSong
+    ld a, 46 ; TODO: adjust according to song speed
+    ldh [hSoundPrerollRowsRemaining], a
+    ret
 
 GameInit:
     ld de, GameTiles
@@ -2293,10 +2321,7 @@ GameInit:
     call DrawEmptyProgressBar
     call FlushVramBuffer
 
-    ld hl, song_song
-    call StartSong
-    ld a, 46 ; TODO: adjust according to song speed
-    ldh [hSoundPrerollRowsRemaining], a
+    call SetupCurrentSong
 
     ; TODO: derive game behavior flags from difficulty level
 
@@ -2540,12 +2565,8 @@ IncHitCueProgress:
     ld [hli], a
     jp EndVramString
 
+; hHitCueStream ptr is expected to be set up already.
 InitializeHitCues:
-    ; TODO: read from table
-    ld a, HIGH(song_cues)
-    ldh [hHitCueStream+1], a
-    ld a, LOW(song_cues)
-    ldh [hHitCueStream], a
     xor a
     ldh [hHitCueProcessingPending], a
     ldh [hHitCueProgressLo], a
@@ -2721,6 +2742,8 @@ dw MainFunc_Delay       ; 6
 dw MainFunc_GameFinished ; 7
 dw MainFunc_SongSessionResultsInit ; 8
 dw MainFunc_SongSessionResults ; 9
+dw MainFunc_SongSelectionInit ; 10
+dw MainFunc_SongSelection ; 11
 
 MainFunc_NoOp:
     ret
@@ -4436,6 +4459,119 @@ Prng:
     ret
 
 
+MainFunc_SongSelectionInit:
+    xor a
+    ldh [hCurrentSong], a
+
+    ; standard palettes
+    ld  a, %00011011
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    ; Clear tilemap
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    call SetMemory
+
+    ld hl, SongSelectionScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+
+    call PrintCurrentSongSelectionIndicator
+
+    ld a, 11
+    ldh [hMainState], a ; song selection
+    jp TurnOnLCD
+
+PrintCurrentSongSelectionIndicator:
+    ld d, $99
+    ldh a, [hCurrentSong]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $01
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentSongIndicator:
+    ld d, $99
+    ldh a, [hCurrentSong]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $01
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_SongSelection:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .chooseSong
+    bit PADB_A, a
+    jr nz, .chooseSong
+    bit PADB_SELECT, a
+    jr nz, .nextSong
+    bit PADB_DOWN, a
+    jr nz, .nextSong
+    bit PADB_UP, a
+    jr nz, .previousSong
+    ret z
+
+    .chooseSong:
+    ld a, 1 ; playtest settings init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .previousSong:
+    call EraseCurrentSongIndicator
+    ldh a, [hCurrentSong]
+    or a
+    jr nz, .noWrapToLastSong
+    ld a, SONG_COUNT
+    .noWrapToLastSong:
+    dec a
+    ldh [hCurrentSong], a
+    jp PrintCurrentSongSelectionIndicator
+
+    .nextSong:
+    call EraseCurrentSongIndicator
+    ldh a, [hCurrentSong]
+    inc a
+    cp SONG_COUNT
+    jr c, .noWrapToFirstSong
+    xor a
+    .noWrapToFirstSong:
+    ldh [hCurrentSong], a
+    jp PrintCurrentSongSelectionIndicator
+
+
 MainFunc_SongSessionResultsInit:
     ; standard palettes
     ld  a, %00011011
@@ -4476,8 +4612,8 @@ MainFunc_SongSessionResults:
     bit PADB_START, a
     ret z ; start not pressed
     ; start pressed
-    ld a, 1
-    ldh [hMainState], a ; playtest settings init
+    ld a, 10
+    ldh [hMainState], a ; song selection init
     jp TurnOffLCD
 
 ; Returns: DE = hit_notes (tap_hit_count + hold_complete_count)
@@ -5035,6 +5171,12 @@ CHARMAP "!", $27
 CHARMAP "-", $28
 CHARMAP "%", $29
 
+SongSelectionScreenTilemap:
+db $98, $83, 12, "CHOOSE SONG:"
+db $99, $03, 7, "WHISKEY"
+db $99, $43, 9, "SOMETHING"
+db 0
+
 PlaytestSettingsScreenTilemap:
 db $98, $42, 14, "INTENSITY MAX:"
 db $98, $82, 11, "HOLD NOTES:"
@@ -5060,9 +5202,15 @@ db 0
 
 SECTION "Hit cue streams", ROM0
 
-include "songcues.inc"
+include "whiskeycues.inc"
 
 SECTION "Song data", ROM0
 
-INCLUDE "song.s"
+INCLUDE "whiskeysong.s"
 INCLUDE "silentsong.s"
+
+SECTION "Song descriptors", ROM0
+
+SongDescriptors:
+dw whiskey_cues, whiskey_song
+dw whiskey_cues, whiskey_song

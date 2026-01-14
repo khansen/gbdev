@@ -6,17 +6,36 @@ $(PROGRAM).gb: $(PROGRAM).o
 	rgblink -t -n $(PROGRAM).sym -m $(PROGRAM).map -o $(PROGRAM).gb $(PROGRAM).o
 	rgbfix -v -p 0xFF $(PROGRAM).gb
 
-$(PROGRAM).o: main.s song.s song.inc songcues.inc silentsong.s silentsong.inc hardware.inc targetsprites.bin explosionsprites.bin gamescreentiles.bin gamescreentilemap.bin playtestsettingsfont.bin
+CHRS = targetsprites.bin \
+	explosionsprites.bin \
+	gamescreentiles.bin \
+	gamescreentilemap.bin \
+	playtestsettingsfont.bin
+
+$(PROGRAM).o: main.s \
+	whiskeysong.s \
+	whiskeysong.inc \
+	whiskeycues.inc \
+	silentsong.s \
+	silentsong.inc \
+	hardware.inc \
+	$(CHRS)
 	rgbasm -o $(PROGRAM).o main.s
 
-song.inc: song.xm instruments.txt
-	xm2gb --instruments-map=instruments.txt $< > $@
+whiskeysong.inc: whiskey.xm whiskey-instruments.txt
+	xm2gb --instruments-map=whiskey-instruments.txt $< > $@
 
-silentsong.inc: silent.xm instruments.txt
-	xm2gb --instruments-map=instruments.txt $< > $@
+whiskeycues.inc: whiskey.xm
+	xm2cues/xm2cues $< > whiskeycues.inc
 
-songcues.inc: song.xm
-	xm2cues/xm2cues $< > songcues.inc
+paradisesong.inc: paradise.xm paradise-instruments.txt
+	xm2gb --instruments-map=paradise-instruments.txt $< > $@
+
+paradisecues.inc: paradise.xm
+	xm2cues/xm2cues $< > paradisecues.inc
+
+silentsong.inc: silent.xm whiskey-instruments.txt
+	xm2gb --instruments-map=whiskey-instruments.txt $< > $@
 
 gamescreentiles.bin gamescreen.nam: gamescreen.chr
 	packchr --character-output=gamescreentiles.bin --nametable-output=gamescreen.nam gamescreen.chr

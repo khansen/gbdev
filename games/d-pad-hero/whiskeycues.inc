@@ -1,5 +1,5 @@
-; Generated from song.xm by xm2cues 1.0
-song_cues:
+; Generated from whiskey.xm by xm2cues 1.0
+whiskey_cues:
 db $00,$92
 db $0D,$D7,$98,$7E,$31,$86,$E0,$A7,$06,$4D,$5A,$3E,$0B,$F0,$62,$E5
 db $93,$D0,$BF,$07,$C1,$57,$E1,$5B,$89,$1A,$53,$D2,$8D,$27,$C9,$94
