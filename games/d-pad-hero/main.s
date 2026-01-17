@@ -2787,7 +2787,9 @@ SetMemory:
 TurnOnLCD:
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG8000 | LCDCF_BG9800
     ldh [hShadowLCDC], a
-    ldh [rLCDC], a ; TODO: why must it be done immediately?
+    ; Write to actual LCDC immediately to get vblanks firing.
+    ; It's safe to do so at any time
+    ldh [rLCDC], a
     ret
 
 ; https://gbdev.io/pandocs/LCDC.html#lcdc7--lcd-enable
@@ -2799,6 +2801,7 @@ TurnOffLCD:
     ldh a, [hShadowLCDC]
     and a, ~LCDCF_ON
     ldh [hShadowLCDC], a
+    ; Do NOT write to actual LCDC here - wait for VBlank to do so safely
     ret
 
 ; Program main function, called each frame in NMI handler
