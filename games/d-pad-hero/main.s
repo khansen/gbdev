@@ -76,6 +76,14 @@ hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
 
+hHealth: db
+hHealthChanged: db
+def HEALTH_MAX equ 100
+def TAP_MISS_DAMAGE equ 6
+def HOLD_HEAD_MISS_DAMAGE equ 8
+def HOLD_BREAK_DAMAGE equ 4
+def MISPRESS_DAMAGE equ 2
+
 def SONG_COUNT equ 2
 hCurrentSong: db
 
@@ -2328,6 +2336,11 @@ GameInit:
 
     call SetupCurrentSong
 
+    ld a, HEALTH_MAX
+    ldh [hHealth], a
+    xor a
+    ldh [hHealthChanged], a
+
     ; TODO: derive game behavior flags from difficulty level
 
     ; TODO: initialize seed based on RAND_MODE:
@@ -2536,6 +2549,62 @@ UpdateMaxStreak:
     .no_update:
     pop hl
     ret
+
+
+DealTapOrHoldHeadMissDamage:
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, DealHoldHeadMissDamage
+
+DealTapMissDamage:
+    ldh a, [hHealth]
+    sub a, TAP_MISS_DAMAGE
+    jr __SaveHealth
+
+DealHoldHeadMissDamage:
+    ldh a, [hHealth]
+    sub a, HOLD_HEAD_MISS_DAMAGE
+    jr __SaveHealth
+
+DealHoldBreakDamage:
+    ldh a, [hHealth]
+    sub a, HOLD_BREAK_DAMAGE
+    jr __SaveHealth
+
+DealMisPressDamage:
+    ldh a, [hHealth]
+    sub a, MISPRESS_DAMAGE
+    ; fallthrough
+
+__SaveHealth:
+    jr nc, .no_death
+    ; health dropped to zero or below
+    xor a
+    .no_death:
+    ldh [hHealth], a
+    ret
+
+RecoverHealth:
+    ldh a, [hHealth]
+    add a, 1
+    cp HEALTH_MAX
+    jr nc, .cap_health
+    ldh [hHealth], a
+    ret
+    .cap_health:
+    ld a, HEALTH_MAX
+    ldh [hHealth], a
+    ret
+
+CheckIfHealthChanged:
+    ldh a, [hHealthChanged]
+    or a, a
+    ret z
+    ; TODO: handle health change (e.g., update health bar, handle death)
+    xor a
+    ldh [hHealthChanged], a
+    ret
+
 
 IncHitCueProgress:
     ldh a, [hHitCueProgressLo]
@@ -3030,7 +3099,8 @@ MainFunc_Gameplay:
     call ProcessActiveTargets
     call ProcessHeldTargets
     call ProcessHitTargets
-    jp ProcessMissedTargets
+    call ProcessMissedTargets
+    jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
     call MainFunc_Gameplay
@@ -3753,14 +3823,9 @@ ProcessActiveTargets:
     jr .loop
 
     .missed:
-    ; missing a normal target is punished - if player(s) alive
-    ; TODO:
-;    jsr reset_points_level
     call IncTapOrHoldHeadMissCount
+    call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
-;    jsr dec_vu_level
-;  + lda miss_damage
-;    jsr sub_energy_with_pain
 
 ; turn off the square wave channels
     ldh [hSoundStatus], a
@@ -3980,11 +4045,10 @@ CheckForErrors:
     ; mis-press in this lane
     push af
     call IncMisPressCount
+    call DealMisPressDamage
     pop af
     .10:
     jr nz, .misPressesLoop
-    ; TODO
-;    jsr deal_error_pain
     jp ResetCurrentStreak
 
 ; ProcessActiveTargets() helper function.
@@ -4029,7 +4093,6 @@ SweepActiveTargets:
     and a, c ; mask off this lane
     ldh [hHitLanes], a
 
-;   TODO: jsr on_normal_target_hit
     ; turn on the sound channels
     ldh a, [hSoundStatus]
     and ~3
@@ -4052,6 +4115,7 @@ SweepActiveTargets:
     jr nz, .isHeldTarget
     ; it's a tap target
     call IncTapHitCount
+    call RecoverHealth
     call IncCurrentStreak
     call MoveActiveTargetToHitList
     ld l, a ; Target_Next
@@ -4296,9 +4360,10 @@ ProcessHeldTargets:
     and a, c ; is this lane still held?
     jr nz, .stillHeld
 
-    ; no longer held - move held target to missed list (TODO: decide on scoring)
+    ; no longer held - move held target to missed list
     ; TODO: turn off sound channels (like we do for tap misses)?
     call IncHoldBreakCount
+    call DealHoldBreakDamage
     call ResetCurrentStreak
     ; clear timer
     xor a
@@ -4325,6 +4390,7 @@ ProcessHeldTargets:
     .timerExpired:
     ; hold complete
     call IncHoldCompleteCount
+    call RecoverHealth
     call IncCurrentStreak
     ld a, l
     and a, ~3 ; Target_Next
