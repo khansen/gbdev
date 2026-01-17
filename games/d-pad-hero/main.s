@@ -109,19 +109,27 @@ def GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION equ 2
 def GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE              equ %00000011 ; 0 = respect, 1 = tapify, 2 = uniform duration
 def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED         equ %00000100
 def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ALLOW_NONE      equ %00001000
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC  equ 0 << 4
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED         equ 1 << 4
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL           equ 2 << 4
 def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE            equ %00110000 ; 0 = deterministic, 1 = seeded, 2 = full
 def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MAX_PICKED      equ %11000000
 def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED          equ 2
 def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ALLOW_NONE       equ 3
 hGameBehaviorState1: db
+def GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE      equ %00000011
+def GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE           equ 3
 hIntensityMax: db
 
 ; Playtest settings screen
 hCurrentPlaytestSetting: db
-def PLAYTEST_SETTINGS_COUNT equ 3
+def PLAYTEST_SETTINGS_COUNT equ 5 ; TODO: 6 (enable max cue notes)
 def PLAYTEST_SETTING__INTENSITY_MAX equ 0
 def PLAYTEST_SETTING__HOLD_NOTES equ 1
-def PLAYTEST_SETTING__RANDOM_NOTES equ 2
+def PLAYTEST_SETTING__HOLD_NOTES_STYLE equ 2
+def PLAYTEST_SETTING__RANDOM_NOTES equ 3
+def PLAYTEST_SETTING__RANDOM_NOTES_STYLE equ 4
+def PLAYTEST_SETTING__MAX_CUE_NOTES equ 5
 
 rsreset
 def Target_Next rb 1                    ; 00
@@ -2341,20 +2349,7 @@ GameInit:
     xor a
     ldh [hHealthChanged], a
 
-    ; TODO: derive game behavior flags from difficulty level
-
-    ; TODO: initialize seed based on RAND_MODE:
-    ; - deterministic:
-    ;   Goal: Same song + same difficulty + same chart data ⇒ identical outcomes, every run.
-    ;   seed = hash(song_id, difficulty_id, ruleset_id, optional_user_seed)
-    ; - seeded random:
-    ;   Goal: A given playthrough is internally consistent, but different playthroughs likely differ.
-    ;   seed = hash(song_id, difficulty_id, ruleset_id) XOR (DIV << 8) XOR LY XOR frame_counter
-    ; - full random:
-    ;   Goal: Make outcomes depend on real-time jitter and player timing so runs are not meaningfully reproducible.
-    ;   seed = same as for "seeded random", but then with subsequent stirring per random decision
-    ldh a, [hFrameCounter]
-    ldh [hRandom], a
+    call InitializeRandom
 
     call ResetGameStats
 
@@ -2364,6 +2359,57 @@ GameInit:
 
     ld hl, OnPatternRowChange
     jp SetPatternRowCallback
+
+InitializeRandom:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .deterministic
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .seeded
+    ; full
+    ; Goal: Make outcomes depend on real-time jitter and player timing so runs are not meaningfully reproducible.
+    ; seed = same as for "seeded", but then with subsequent stirring per random decision
+    ; fallthrough
+    .seeded:
+    ; Goal: A given playthrough is internally consistent, but different playthroughs likely differ.
+    ; seed = hash(song_id, difficulty_id, ruleset_id) XOR (DIV << 8) XOR LY XOR frame_counter
+    call .deterministic
+    ldh a, [hRandom]
+    ld b, a
+    ldh a, [hFrameCounter]
+    xor a, b
+    ld b, a
+    ldh a, [rDIV]
+    xor a, b
+    ldh [hRandom], a
+    ret
+    .deterministic:
+    ; Goal: Same song + same difficulty + same chart data ⇒ identical outcomes, every run.
+    ; seed = hash(song_id, difficulty_id, ruleset_id, optional_user_seed)
+    ldh a, [hCurrentSong]
+    add a, 1
+    ld b, a
+    ldh a, [hGameBehaviorState0]
+    xor a, b
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    xor a, b
+    ld b, a
+    ldh a, [hIntensityMax]
+    xor a, b
+    ld b, a
+    ldh a, [hIntensityMax]
+    swap a
+    xor a, b
+    ldh [hRandom], a
+
+    ld c, 16
+    .warm:
+    call Prng
+    dec c
+    jr nz, .warm
+    ret
 
 def PROGRESS_BAR_TILES_BASE equ $b0
 
@@ -2606,6 +2652,7 @@ CheckIfHealthChanged:
     ret
 
 
+; Destroys A, B, C, D, E
 IncHitCueProgress:
     ldh a, [hHitCueProgressLo]
     ld b, a
@@ -2833,9 +2880,56 @@ MainFunc_Delay_TimerTimeout:
     ldh [hMainState], a
     ret
 
+
+NEWCHARMAP playtestsettings
+CHARMAP " ", $00
+CHARMAP "0", $01
+CHARMAP "1", $02
+CHARMAP "2", $03
+CHARMAP "3", $04
+CHARMAP "4", $05
+CHARMAP "5", $06
+CHARMAP "6", $07
+CHARMAP "7", $08
+CHARMAP "8", $09
+CHARMAP "9", $0A
+CHARMAP "A", $0B
+CHARMAP "B", $0C
+CHARMAP "C", $0D
+CHARMAP "D", $0E
+CHARMAP "E", $0F
+CHARMAP "F", $10
+CHARMAP "G", $11
+CHARMAP "H", $12
+CHARMAP "I", $13
+CHARMAP "J", $14
+CHARMAP "K", $15
+CHARMAP "L", $16
+CHARMAP "M", $17
+CHARMAP "N", $18
+CHARMAP "O", $19
+CHARMAP "P", $1A
+CHARMAP "Q", $1B
+CHARMAP "R", $1C
+CHARMAP "S", $1D
+CHARMAP "T", $1E
+CHARMAP "U", $1F
+CHARMAP "V", $20
+CHARMAP "W", $21
+CHARMAP "X", $22
+CHARMAP "Y", $23
+CHARMAP "Z", $24
+CHARMAP ":", $25
+CHARMAP "*", $26
+CHARMAP "!", $27
+CHARMAP "-", $28
+CHARMAP "%", $29
+
 MainFunc_PlaytestSettingsInit:
-    ld a, GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED
+    ld a, GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
     ldh [hGameBehaviorState0], a
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE
+    ldh [hGameBehaviorState1], a
     ld a, $30
     ldh [hIntensityMax], a
     xor a
@@ -2864,7 +2958,10 @@ MainFunc_PlaytestSettingsInit:
     call PrintCurrentPlaytestSettingIndicator
     call PrintIntensityMaxPlaytestSetting
     call PrintHoldNotesPlaytestSetting
+    call PrintHoldNotesStylePlaytestSetting
     call PrintRandomNotesPlaytestSetting
+    call PrintRandomNotesStylePlaytestSetting
+    call PrintMaxCueNotesPlaytestSetting
     call FlushVramBuffer
 
     call HideAllSprites
@@ -2914,8 +3011,31 @@ PrintHoldNotesPlaytestSetting:
     ld [hli], a
     jp EndVramString
 
+PrintHoldNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .notAvailable
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    jr z, .normalStyle
+    ; uniform style
+    ld de, .uniformStyleString
+    jp CopyStringToVramBuffer
+    .normalStyle:
+    ld de, .normalStyleString
+    jp CopyStringToVramBuffer
+    .notAvailable:
+    ld de, .notAvailableString
+    jp CopyStringToVramBuffer
+.uniformStyleString:
+    db $98,$CB,7,"UNIFORM"
+.normalStyleString:
+    db $98,$CB,7,"NORMAL "
+.notAvailableString:
+    db $98,$CB,7,"---    "
+
 PrintRandomNotesPlaytestSetting:
-    ld de, $98D0
+    ld de, $9910
     ld c, 3
     call BeginVramString
     ld a, $19 ; 'O'
@@ -2936,16 +3056,66 @@ PrintRandomNotesPlaytestSetting:
     ld [hli], a
     jp EndVramString
 
+PrintRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .notAvailable
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .deterministic
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .seeded
+    ; full
+    ld de, .wildStyleString
+    jp CopyStringToVramBuffer
+    .deterministic:
+    ld de, .fixedStyleString
+    jp CopyStringToVramBuffer
+    .seeded:
+    ld de, .seededStyleString
+    jp CopyStringToVramBuffer
+    .notAvailable:
+    ld de, .notAvailableString
+    jp CopyStringToVramBuffer
+.fixedStyleString:
+    db $99,$4B,6,"FIXED "
+.seededStyleString:
+    db $99,$4B,6,"SEEDED"
+.wildStyleString:
+    db $99,$4B,6,"WILD  "
+.notAvailableString:
+    db $99,$4B,6,"---   "
+
+PrintMaxCueNotesPlaytestSetting:
+    ; not supported yet
+    ret
+    ld de, $9991
+    ld c, 1
+    call BeginVramString
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    add a, 1
+    ld [hli], a
+    jp EndVramString
+
 EraseCurrentPlaytestSettingIndicator:
-    ld d, $98
+    ld d, $02
     ldh a, [hCurrentPlaytestSetting]
+    inc a
+    or a, $60
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
-    add a, $41
+    rl d
+    or a, 1
     ld e, a
     ld c, 1
     call BeginVramString
@@ -2954,15 +3124,23 @@ EraseCurrentPlaytestSettingIndicator:
     jp EndVramString
 
 PrintCurrentPlaytestSettingIndicator:
-    ld d, $98
+    ld d, $02
     ldh a, [hCurrentPlaytestSetting]
+    inc a
+    or a, $60
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
+    rl d
     sla a
-    add a, $41
+    rl d
+    or a, 1
     ld e, a
     ld c, 1
     call BeginVramString
@@ -2994,7 +3172,25 @@ MainFunc_PlaytestSettings:
     ret
 
     .previousSetting:
+    jp PreviousPlaytestSetting
+
+    .nextSetting:
+    jp NextPlaytestSetting
+
+    .previousValue:
+    jp PreviousPlaytestSettingValue
+
+    .nextValue:
+    jp NextPlaytestSettingValue
+
+    .startPressed:
+    ld a, 3
+    ldh [hMainState], a ; game init
+    jp TurnOffLCD
+
+PreviousPlaytestSetting:
     call EraseCurrentPlaytestSettingIndicator
+    .previousSettingAgain:
     ldh a, [hCurrentPlaytestSetting]
     or a
     jr nz, .noWrapToLastSetting
@@ -3002,10 +3198,28 @@ MainFunc_PlaytestSettings:
     .noWrapToLastSetting:
     dec a
     ldh [hCurrentPlaytestSetting], a
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .skipHoldNotesStylePreviousSettingIfNotApplicable
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .skipRandomNotesStylePreviousSettingIfNotApplicable
     jp PrintCurrentPlaytestSettingIndicator
 
-    .nextSetting:
+    .skipHoldNotesStylePreviousSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .previousSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipRandomNotesStylePreviousSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .previousSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+NextPlaytestSetting:
     call EraseCurrentPlaytestSettingIndicator
+    .nextSettingAgain:
     ldh a, [hCurrentPlaytestSetting]
     inc a
     cp PLAYTEST_SETTINGS_COUNT
@@ -3013,16 +3227,39 @@ MainFunc_PlaytestSettings:
     xor a
     .noWrapToFirstSetting:
     ldh [hCurrentPlaytestSetting], a
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .skipHoldNotesStyleNextSettingIfNotApplicable
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .skipRandomNotesStyleNextSettingIfNotApplicable
     jp PrintCurrentPlaytestSettingIndicator
 
-    .previousValue:
+    .skipHoldNotesStyleNextSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .nextSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipRandomNotesStyleNextSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .nextSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+PreviousPlaytestSettingValue:
     ldh a, [hCurrentPlaytestSetting]
     cp PLAYTEST_SETTING__INTENSITY_MAX
     jr z, .decreaseIntensityMax
     cp PLAYTEST_SETTING__HOLD_NOTES
     jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .toggleHoldNotesStyle
     cp PLAYTEST_SETTING__RANDOM_NOTES
     jr z, .toggleRandomNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .previousRandomNotesStyle
+    cp PLAYTEST_SETTING__MAX_CUE_NOTES
+    jr z, .decreaseMaxCueNotes
     ; unhandled setting
     jp Reset
 
@@ -3032,14 +3269,46 @@ MainFunc_PlaytestSettings:
     ldh [hIntensityMax], a
     jp PrintIntensityMaxPlaytestSetting
 
-    .nextValue:
+    .toggleHoldNotes:
+    jp ToggleHoldNotesPlaytestSetting
+
+    .toggleHoldNotesStyle:
+    jp ToggleHoldNotesStylePlaytestSetting
+
+    .toggleRandomNotes:
+    jp ToggleRandomNotesPlaytestSetting
+
+    .previousRandomNotesStyle:
+    jp PreviousRandomNotesStylePlaytestSetting
+
+    .decreaseMaxCueNotes:
+    ldh a, [hGameBehaviorState1]
+    and ~GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    dec a
+    jr nz, .noWrapToMax
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE
+    .noWrapToMax:
+    or a, b
+    ldh [hGameBehaviorState1], a
+    jp PrintMaxCueNotesPlaytestSetting
+
+NextPlaytestSettingValue:
     ldh a, [hCurrentPlaytestSetting]
     cp PLAYTEST_SETTING__INTENSITY_MAX
     jr z, .increaseIntensityMax
     cp PLAYTEST_SETTING__HOLD_NOTES
     jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .toggleHoldNotesStyle
     cp PLAYTEST_SETTING__RANDOM_NOTES
     jr z, .toggleRandomNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .nextRandomNotesStyle
+    cp PLAYTEST_SETTING__MAX_CUE_NOTES
+    jr z, .increaseMaxCueNotes
     ; unhandled setting
     jp Reset
 
@@ -3050,24 +3319,71 @@ MainFunc_PlaytestSettings:
     jp PrintIntensityMaxPlaytestSetting
 
     .toggleHoldNotes:
+    jp ToggleHoldNotesPlaytestSetting
+
+    .toggleHoldNotesStyle:
+    jp ToggleHoldNotesStylePlaytestSetting
+
+    .toggleRandomNotes:
+    jp ToggleRandomNotesPlaytestSetting
+
+    .nextRandomNotesStyle:
+    jp NextRandomNotesStylePlaytestSetting
+
+    .increaseMaxCueNotes:
+    ldh a, [hGameBehaviorState1]
+    and ~GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    inc a
+    cp GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE + 1
+    jr c, .noWrapToOne
+    ld a, 1
+    .noWrapToOne:
+    or a, b
+    ldh [hGameBehaviorState1], a
+    jp PrintMaxCueNotesPlaytestSetting
+
+ToggleHoldNotesPlaytestSetting:
     ldh a, [hGameBehaviorState0]
     and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
-    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
-    jr z, .turnOffHoldNotes
-    ; turn on hold notes
-    ldh a, [hGameBehaviorState0]
-    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
-    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
-    ldh [hGameBehaviorState0], a
-    jp PrintHoldNotesPlaytestSetting
-    .turnOffHoldNotes:
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .turnOnHoldNotes
+    ; turn off hold notes
     ldh a, [hGameBehaviorState0]
     and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
     or GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
     ldh [hGameBehaviorState0], a
-    jp PrintHoldNotesPlaytestSetting
+    call PrintHoldNotesPlaytestSetting
+    jp PrintHoldNotesStylePlaytestSetting
+    .turnOnHoldNotes:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    ldh [hGameBehaviorState0], a
+    call PrintHoldNotesPlaytestSetting
+    jp PrintHoldNotesStylePlaytestSetting
 
-    .toggleRandomNotes:
+ToggleHoldNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    jr z, .setUniformStyle
+    ; set normal style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    ldh [hGameBehaviorState0], a
+    jp PrintHoldNotesStylePlaytestSetting
+    .setUniformStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION
+    ldh [hGameBehaviorState0], a
+    jp PrintHoldNotesStylePlaytestSetting
+
+ToggleRandomNotesPlaytestSetting:
     ldh a, [hGameBehaviorState0]
     bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
     jr nz, .turnOffRandomNotes
@@ -3075,17 +3391,72 @@ MainFunc_PlaytestSettings:
     ldh a, [hGameBehaviorState0]
     set GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
     ldh [hGameBehaviorState0], a
-    jp PrintRandomNotesPlaytestSetting
+    ; default to deterministic style when enabling
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    call PrintRandomNotesPlaytestSetting
+    jp PrintRandomNotesStylePlaytestSetting
     .turnOffRandomNotes:
     ldh a, [hGameBehaviorState0]
     res GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
     ldh [hGameBehaviorState0], a
-    jp PrintRandomNotesPlaytestSetting
+    call PrintRandomNotesPlaytestSetting
+    jp PrintRandomNotesStylePlaytestSetting
 
-    .startPressed:
-    ld a, 3
-    ldh [hMainState], a ; game init
-    jp TurnOffLCD
+PreviousRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .setWildStyle
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .setDeterministicStyle
+    ; set seeded style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setDeterministicStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setWildStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+
+NextRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .setSeededStyle
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .setWildStyle
+    ; set deterministic style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setSeededStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setWildStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+
 
 MainFunc_GameInit:
     call GameInit
@@ -3159,12 +3530,15 @@ ProcessHitCues:
     jr z, .setNextTimer ; it's just a delay, no targets to spawn
     cp 12 ; extended payload?
     jr nc, .extendedPayload
+    ld c, a ; chord id (nonzero)
 
     .processLanesAfterExtensions:
-    push af ; save chord id
     call SuppressLanesByIntensity
+    call SuppressLanesByMaxNotesPerCue
+    push bc ; save chord id
     call IncHitCueProgress ; make sure progress is updated even if no targets are spawned
-    pop af ; restore chord id
+    pop bc ; restore chord id
+    ld a, c ; chord id
     or a, LOW(.ChordIdToLanesBitmask)
     ld l, a
     ld h, HIGH(.ChordIdToLanesBitmask)
@@ -3175,8 +3549,6 @@ ProcessHitCues:
     jr z, .setNextTimer ; no lanes to spawn
 
     ld b, a ; effective lane bits
-    ; TODO: check if we need to suppress additional lanes due to K_MAX_NOTES_PER_CUE
-        ; they should be resolved using intensities
     xor a ; lane
     .laneLoop:
     srl b ; lane bit into carry
@@ -3333,8 +3705,7 @@ ProcessHitCues:
     jr .skipRandomizationForLane
     .considerRandomizationForLane:
     ; TODO: if ALLOW_NONE is 0, make sure at least one candidate lane remains
-    ; TODO: if RAND_MODE = "full random", stir the PRNG here
-    call Prng
+    call RandomDecision
     and a, 1 ; 50% chance
     ld b, a
     pop af ; restore lane index
@@ -3365,9 +3736,9 @@ ProcessHitCues:
     ldh a, [hGameBehaviorState0]
     bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a ; randomization enabled?
     jr z, .processHolds
-    ; TODO: if ALLOW_NONE is 0, don't suppress
-    ; TODO: if RAND_MODE = "full random", stir the PRNG here
-    call Prng
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ALLOW_NONE, a
+    jr z, .processHolds
+    call RandomDecision
     and a, 1 ; 50% chance
     jr z, .processHolds
     ; suppress the lane
@@ -3473,7 +3844,6 @@ ProcessHitCues:
     call SetUniformHoldDurations
 
     .doneProcessingExtensions:
-    ld a, c ; chord id
     jp .processLanesAfterExtensions
 
     .endOfStream:
@@ -3587,6 +3957,15 @@ SuppressLanesByIntensity:
     ldh a, [hSuppressedLanes]
     or a, b
     ldh [hSuppressedLanes], a
+    ret
+
+; C = chord id
+SuppressLanesByMaxNotesPerCue:
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    cp GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE ; no limit?
+    ret z
+    ; TODO: implement suppression based on intensity order
     ret
 
 ; A = lane (bits 1..0)
@@ -4508,6 +4887,7 @@ ProcessMissedTargets:
     ld [hl], a ; previous Target_Next = this Target_Next
     jr .loop
 
+
 Prng:
     ldh a, [hRandom]
     srl a
@@ -4516,6 +4896,24 @@ Prng:
     .noXor:
     ldh [hRandom], a
     ret
+
+; Destroys: A, B
+RandomDecision:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    jr nz, .skipStir
+    ldh a, [hRandom]
+    ld b, a
+    ldh a, [rDIV]
+    xor b
+    ld b, a
+    ldh a, [rDIV]
+    rrc a
+    xor a, b
+    ldh [hRandom], a
+    .skipStir:
+    jr Prng
 
 
 MainFunc_SongSelectionInit:
@@ -5186,50 +5584,6 @@ GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
 
-NEWCHARMAP playtestsettings
-CHARMAP " ", $00
-CHARMAP "0", $01
-CHARMAP "1", $02
-CHARMAP "2", $03
-CHARMAP "3", $04
-CHARMAP "4", $05
-CHARMAP "5", $06
-CHARMAP "6", $07
-CHARMAP "7", $08
-CHARMAP "8", $09
-CHARMAP "9", $0A
-CHARMAP "A", $0B
-CHARMAP "B", $0C
-CHARMAP "C", $0D
-CHARMAP "D", $0E
-CHARMAP "E", $0F
-CHARMAP "F", $10
-CHARMAP "G", $11
-CHARMAP "H", $12
-CHARMAP "I", $13
-CHARMAP "J", $14
-CHARMAP "K", $15
-CHARMAP "L", $16
-CHARMAP "M", $17
-CHARMAP "N", $18
-CHARMAP "O", $19
-CHARMAP "P", $1A
-CHARMAP "Q", $1B
-CHARMAP "R", $1C
-CHARMAP "S", $1D
-CHARMAP "T", $1E
-CHARMAP "U", $1F
-CHARMAP "V", $20
-CHARMAP "W", $21
-CHARMAP "X", $22
-CHARMAP "Y", $23
-CHARMAP "Z", $24
-CHARMAP ":", $25
-CHARMAP "*", $26
-CHARMAP "!", $27
-CHARMAP "-", $28
-CHARMAP "%", $29
-
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
@@ -5239,9 +5593,12 @@ db 0
 PlaytestSettingsScreenTilemap:
 db $98, $42, 14, "INTENSITY MAX:"
 db $98, $82, 11, "HOLD NOTES:"
-db $98, $C2, 13, "RANDOM NOTES:"
-db $99, $A5, 10, "PUSH START"
-db $99, $E6, 8, "TO PLAY!"
+db $98, $C2, 8,  "  STYLE:"
+db $99, $02, 13, "RANDOM NOTES:"
+db $99, $42, 8,  "  STYLE:"
+;db $99, $82, 14, "MAX CUE NOTES:"
+db $99, $E5, 10, "PUSH START"
+db $9A, $06, 8,  "TO PLAY!"
 db 0
 
 SongSessionResultsScreenTilemap:
