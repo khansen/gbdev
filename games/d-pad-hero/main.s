@@ -4743,10 +4743,13 @@ ProcessHeldTargets:
     jr nz, .stillHeld
 
     ; no longer held - move held target to missed list
-    ; TODO: turn off sound channels (like we do for tap misses)?
     call IncHoldBreakCount
     call DealHoldBreakDamage
     call ResetCurrentStreak
+    ; turn off the square wave channels
+    ldh [hSoundStatus], a
+    or a, 3
+    ldh [hSoundStatus], a
     ; clear timer
     xor a
     ld [hl-], a ; Target_HoldTimer
