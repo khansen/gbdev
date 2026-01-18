@@ -37,21 +37,29 @@ hTimerCallback: dw
 def TIMER_SPEED equ 4
 
 def HIT_CUE_DELAY_WIDTH equ 3
-def HIT_CUE_PAYLOAD_WIDTH equ 4
+def HIT_CUE_BASE_PAYLOAD_WIDTH equ 4
 
-def HIT_START_Y equ 139
+def HIT_START_Y equ 129
 def HIT_EXTENT equ 13
+def HIT_GRACE_EXTENT equ 4
 
 hHitCueStream: dw
 hHitCueStreamBitCtr: db
 hHitCueStreamBits: db
 hHitCueTimer: db
 hHitCueProcessingPending: db
+hHitCueProgressHi: db
+hHitCueProgressLo: db
+hHitCueProgressIncHi: db
+hHitCueProgressIncLo: db
+def HIT_CUE_MAX_PROGRESS equ 96
 
 ; linked lists
 hFreeTargetsList: db
 hActiveTargetsHead: db
 hActiveTargetsTail: db
+hHeldTargetsHead: db
+hHeldTargetsTail: db
 hHitTargetsHead: db
 hHitTargetsTail: db
 hMissedTargetsHead: db
@@ -65,12 +73,72 @@ hCheckedLanes: db
 hHittableLanes: db
 hHitLanes: db
 hErrorLanes: db
+hDrawHoldLength: db
+hSuppressedLanes: db
+
+hHealth: db
+hHealthChanged: db
+def HEALTH_MAX equ 100
+def TAP_MISS_DAMAGE equ 6
+def HOLD_HEAD_MISS_DAMAGE equ 8
+def HOLD_BREAK_DAMAGE equ 4
+def MISPRESS_DAMAGE equ 2
+
+def SONG_COUNT equ 2
+hCurrentSong: db
+
+; stats
+hSpawnedChordsCount: dw
+hFullyClearedChordsCount: dw
+hSpawnedTargetsCount: dw
+hTapHitCount: dw
+hTapMissCount: dw
+hHoldHeadHitCount: dw
+hHoldHeadMissCount: dw
+hHoldCompleteCount: dw
+hHoldBreakCount: dw
+hMisPressCount: dw
+hCurrentStreak: dw
+hMaxStreak: dw
+hComputedSongSessionAccuracy: db ; 0..100
+
+hGameBehaviorState0: db
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT          equ 0
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY           equ 1
+def GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION equ 2
+def GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE              equ %00000011 ; 0 = respect, 1 = tapify, 2 = uniform duration
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED         equ %00000100
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_ALLOW_NONE      equ %00001000
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC  equ 0 << 4
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED         equ 1 << 4
+def GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL           equ 2 << 4
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE            equ %00110000 ; 0 = deterministic, 1 = seeded, 2 = full
+def GAME_BEHAVIOR_STATE0_MASK__RANDOM_MAX_PICKED      equ %11000000
+def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED          equ 2
+def GAME_BEHAVIOR_STATE0_BIT__RANDOM_ALLOW_NONE       equ 3
+hGameBehaviorState1: db
+def GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE      equ %00000011
+def GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE           equ 3
+hIntensityMax: db
+
+; Playtest settings screen
+hCurrentPlaytestSetting: db
+def PLAYTEST_SETTINGS_COUNT equ 5 ; TODO: 6 (enable max cue notes)
+def PLAYTEST_SETTING__INTENSITY_MAX equ 0
+def PLAYTEST_SETTING__HOLD_NOTES equ 1
+def PLAYTEST_SETTING__HOLD_NOTES_STYLE equ 2
+def PLAYTEST_SETTING__RANDOM_NOTES equ 3
+def PLAYTEST_SETTING__RANDOM_NOTES_STYLE equ 4
+def PLAYTEST_SETTING__MAX_CUE_NOTES equ 5
 
 rsreset
 def Target_Next rb 1                    ; 00
 def Target_State rb 1                   ; 01
 def Target_PosY_Frac rb 1               ; 02
+rsset Target_PosY_Frac
+def Target_HoldTimer rb 1               ; 02
 def Target_PosY_Int  rb 1               ; 03
+; TODO: Target_ChordInstance
 def Target_SIZEOF    rb 0               ; 04
 
 def MAX_TARGETS equ 32
@@ -96,6 +164,9 @@ hShadowNR42: db
 ; bit 5: paused (1=yes)
 hSoundStatus: db
 
+; number of rows to wait before starting playback
+hSoundPrerollRowsRemaining: db
+
 ; --- End Sound engine
 
 SECTION "WRAM", WRAM0[$c000]
@@ -108,6 +179,12 @@ wVramBuffer:
 
 wTargetsArena:
     ds Target_SIZEOF * MAX_TARGETS
+
+def MAX_HOLD_TIMERS equ 16
+wHoldTimerTable: ds MAX_HOLD_TIMERS
+
+wTargetDurationByLane: ds 4
+wLaneIntensities: ds 4
 
 ; --- Begin Sound engine
 
@@ -556,8 +633,7 @@ BeginVramString:
     ret
 
 EndVramString:
-    xor a
-    ld [hl], a
+    ld [hl], 0
     ld a, l
     sub a, LOW(wVramBuffer)
     ldh [hVramBufferOffset], a
@@ -657,6 +733,9 @@ StartSong:
     cp a, $ff ; channel not in use?
     jr z, .skip
     ld a, [hli] ; speed
+if !def(NO_SONG_SPEED_ADJUSTMENT)
+    dec a
+endc
     ; slow it down by 8x - useful for debugging
     ; sla a
     ; sla a
@@ -721,6 +800,9 @@ StartSong:
 
     ld a, $f0
     ldh [hMasterVol], a
+    xor a
+    ldh [hSoundStatus], a ; unmute all channels
+    ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
 
 ; Volume envelope states
@@ -754,6 +836,7 @@ UpdateSound:
     cp a, [hl]  ; speed == tick?
     jr z, .next_row
     inc l ; Track_Pattern_RowCount
+    .continue_after_preroll_processing:
     inc l ; Track_Pattern_Row
     inc l ; Track_Pattern_RowStatus
     jp .mixer_tick
@@ -763,6 +846,24 @@ UpdateSound:
     pop hl
     xor a, a
     ld [hli], a ; Track_Tick
+    ldh a, [hSoundPrerollRowsRemaining]
+    or a, a ; is there a preroll to process?
+    jr z, .no_preroll ; skip if not
+    bit 0, b
+    jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
+    bit 1, b
+    jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
+    dec a
+    ldh [hSoundPrerollRowsRemaining], a
+    jr nz, .preroll_not_done
+    ; preroll finished - unmute all channels and carry on!
+    ldh [hSoundStatus], a ; 0
+    jr .no_preroll
+    .preroll_not_done:
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+    jr .continue_after_preroll_processing
+    .no_preroll:
     ld a, [hli] ; Track_Pattern_RowCount
     inc [hl]    ; Track_Pattern_Row
     cp a, [hl]  ; rowCount == row?
@@ -776,8 +877,7 @@ UpdateSound:
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     .pre_order_loop:
-    ld a, [hl] ; Track_Order_Pos
-    ld c, a
+    ld c, [hl] ; Track_Order_Pos
     ldh a, [hOrder]
     add a, c
     ld e, a
@@ -894,8 +994,7 @@ UpdateSound:
     inc de
     ld [hli], a ; Track_Effect_Param
     ; clear effect state
-    xor a, a
-    ld [hl], a ; Track_Effect_Pos
+    ld [hl], 0 ; Track_Effect_Pos
     .skip_effect_init:
     pop hl ; Track_Pattern_Ptr (lo)
     jr .pattern_fetch_loop
@@ -1014,8 +1113,7 @@ UpdateSound:
     ld [hl-], a ; Track_Effect_Portamento_TargetPeriodHi
     ld a, d
     ld [hl-], a ; Track_Effect_Portamento_TargetPeriodLo
-    ld a, c
-    ld [hl], a ; Track_Effect_Portamento_Ctrl
+    ld [hl], c ; Track_Effect_Portamento_Ctrl
     pop hl ; Track_Pattern_Ptr (lo)
     dec l ; Track_Pattern_RowStatus
     .mixer_tick:
@@ -1077,8 +1175,7 @@ RenderChannel1:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1174,8 +1271,7 @@ RenderChannel3:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1241,8 +1337,7 @@ RenderChannel2:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1338,8 +1433,7 @@ RenderChannel4:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1455,8 +1549,7 @@ dw .pan_right     ; 6
     push hl
     ld de, Track_Envelope_Hold - Track_Pattern_Ptr
     add hl, de
-    ld a, 1
-    ld [hl], a ; Track_Envelope_Hold
+    ld [hl], 1 ; Track_Envelope_Hold
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     scf ; CF=1 signals keep processing pattern data
@@ -1652,8 +1745,7 @@ dw .pulsemod_tick     ; 9
 ; slide up by adding slide amount to period value
     pop hl ; Track_Effect_Param
     push hl
-    ld a, [hl] ; Track_Effect_Param
-    ld c, a
+    ld c, [hl] ; Track_Effect_Param
     ld a, l ; Track_Effect_Param
     add a, Track_PeriodLo - Track_Effect_Param
     ld l, a
@@ -1670,8 +1762,7 @@ dw .pulsemod_tick     ; 9
 ; slide up by subtracting slide amount from period value
     pop hl ; Track_Effect_Param
     push hl
-    ld a, [hl] ; Track_Effect_Param
-    ld c, a
+    ld c, [hl] ; Track_Effect_Param
     ld a, l ; Track_Effect_Param
     add a, Track_PeriodLo - Track_Effect_Param
     ld l, a
@@ -1735,8 +1826,7 @@ dw .pulsemod_tick     ; 9
     ; set final period
     ld a, e
     ld [hli], a ; Track_PeriodLo
-    ld a, d
-    ld [hl], a ; Track_PeriodHi
+    ld [hl], d ; Track_PeriodHi
     ; halt
     pop hl ; Track_Effect_Param
     inc l ; Track_Effect_Portamento_Ctrl
@@ -1925,8 +2015,7 @@ dw .pulsemod_tick     ; 9
     ld a, l ; Track_Effect_Param
     add a, Track_MasterVol - Track_Effect_Param
     ld l, a ; Track_MasterVol
-    xor a, a
-    ld [hl], a ; Track_MasterVol
+    ld [hl], 0 ; Track_MasterVol
     pop hl ; Track_Effect_Param
     ret
 
@@ -1954,8 +2043,7 @@ EnvelopeTick:
     ld e, a
     ld a, [hli] ; Track_Envelope_Ptr (hi)
     ld d, a
-    xor a, a
-    ld [hl], a ; Track_Envelope_Pos = 0
+    ld [hl], 0 ; Track_Envelope_Pos = 0
     .init_vol:
     ; HL = Track_Envelope_Pos
     ld a, [de] ; 1st byte = start volume
@@ -2008,8 +2096,7 @@ EnvelopeTick:
     jr .point_init
     .env_stop:
     pop hl ; Track_Envelope_Phase
-    xor a, a
-    ld [hl], a ; Track_Envelope_Phase
+    ld [hl], 0 ; Track_Envelope_Phase
     ret
 
     .sustain:
@@ -2178,7 +2265,10 @@ Genesis:
     ld a, $80
     ldh [rAUD3ENA], a ; DAC on
 
-    call MainFunc_TitleInit
+    ; TODO: call MainFunc_TitleScreenInit
+    call MainFunc_SongSelectionInit
+    ; call MainFunc_PlaytestSettingsInit
+    ; call MainFunc_SongSessionResultsInit
 
 ; enable interrupts now
 	ld   a, IEF_VBLANK
@@ -2188,7 +2278,58 @@ Genesis:
     halt
     jp .InfiniteLoop
 
+
+SetupCurrentSong:
+    ldh a, [hCurrentSong]
+    sla a
+    sla a ; * 4 (each SongDescriptor is 4 bytes)
+    add a, LOW(SongDescriptors)
+    ld l, a
+    ld a, HIGH(SongDescriptors)
+    adc a, 0
+    ld h, a
+    ld a, [hli] ; hit cue stream lo
+    ldh [hHitCueStream], a
+    ld a, [hli] ; hit cue stream hi
+    ldh [hHitCueStream+1], a
+    ld a, [hli] ; song lo
+    push af
+    ld a, [hl]  ; song hi
+    ld h, a
+    pop af
+    ld l, a
+    call StartSong
+    ld a, [wTracks + Track_Speed]
+    cp 5
+    jr z, .speed_5
+    cp 3
+    jr z, .speed_3
+    cp 4
+    jr z, .speed_4
+    cp 6
+    jr z, .speed_6
+    jp Reset ; TODO: adjust according to song speed
+    .speed_3:
+    ld a, 46
+    jr .set_preroll_rows
+    .speed_4:
+    ld a, 35
+    jr .set_preroll_rows
+    .speed_6:
+    ld a, 24
+    jr .set_preroll_rows
+    .speed_5:
+    ld a, 28
+    .set_preroll_rows:
+    ldh [hSoundPrerollRowsRemaining], a
+    ret
+
 GameInit:
+    ; palettes: from dimmed to bright
+    ld  a, %00011011
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
     ld de, GameTiles
     ld hl, $8000
     ld bc, GameTilesEnd - GameTiles
@@ -2203,26 +2344,367 @@ GameInit:
     ld hl, GameScreenTilemap
     call WriteVramStrings
 
-    ld hl, song_song
-    call StartSong
-    ld a, $0
-    ldh [hSoundStatus], a ; unmute all channels
+    call DrawEmptyProgressBar
+    call FlushVramBuffer
+
+    call SetupCurrentSong
+
+    ld a, HEALTH_MAX
+    ldh [hHealth], a
+    xor a
+    ldh [hHealthChanged], a
+
+    call InitializeRandom
+
+    call ResetGameStats
 
     call InitializeTargetLists
-
-    ; Initialize hit cue
-    ld a, HIGH(SongHitCueStream)
-    ldh [hHitCueStream+1], a
-    ld a, LOW(SongHitCueStream)
-    ldh [hHitCueStream], a
-    xor a
-    ldh [hHitCueProcessingPending], a
-    inc a
-    ldh [hHitCueTimer], a
-    ldh [hHitCueStreamBitCtr], a
+    call InitializeHoldTimerTable
+    call InitializeHitCues
 
     ld hl, OnPatternRowChange
     jp SetPatternRowCallback
+
+InitializeRandom:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .deterministic
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .seeded
+    ; full
+    ; Goal: Make outcomes depend on real-time jitter and player timing so runs are not meaningfully reproducible.
+    ; seed = same as for "seeded", but then with subsequent stirring per random decision
+    ; fallthrough
+    .seeded:
+    ; Goal: A given playthrough is internally consistent, but different playthroughs likely differ.
+    ; seed = hash(song_id, difficulty_id, ruleset_id) XOR (DIV << 8) XOR LY XOR frame_counter
+    call .deterministic
+    ldh a, [hRandom]
+    ld b, a
+    ldh a, [hFrameCounter]
+    xor a, b
+    ld b, a
+    ldh a, [rDIV]
+    xor a, b
+    ldh [hRandom], a
+    ret
+    .deterministic:
+    ; Goal: Same song + same difficulty + same chart data ⇒ identical outcomes, every run.
+    ; seed = hash(song_id, difficulty_id, ruleset_id, optional_user_seed)
+    ldh a, [hCurrentSong]
+    add a, 1
+    ld b, a
+    ldh a, [hGameBehaviorState0]
+    xor a, b
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    xor a, b
+    ld b, a
+    ldh a, [hIntensityMax]
+    xor a, b
+    ld b, a
+    ldh a, [hIntensityMax]
+    swap a
+    xor a, b
+    ldh [hRandom], a
+
+    ld c, 16
+    .warm:
+    call Prng
+    dec c
+    jr nz, .warm
+    ret
+
+def PROGRESS_BAR_TILES_BASE equ $b0
+
+DrawEmptyProgressBar:
+    ld de, $9801
+    ld c, $4C
+    call BeginVramString
+    ld a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    jp EndVramString
+
+ResetGameStats:
+    xor a
+    ldh [hTapHitCount], a
+    ldh [hTapHitCount+1], a
+    ldh [hTapMissCount], a
+    ldh [hTapMissCount+1], a
+    ldh [hHoldHeadHitCount], a
+    ldh [hHoldHeadHitCount+1], a
+    ldh [hHoldHeadMissCount], a
+    ldh [hHoldHeadMissCount+1], a
+    ldh [hHoldCompleteCount], a
+    ldh [hHoldCompleteCount+1], a
+    ldh [hHoldBreakCount], a
+    ldh [hHoldBreakCount+1], a
+    ldh [hMisPressCount], a
+    ldh [hMisPressCount+1], a
+    ldh [hSpawnedTargetsCount], a
+    ldh [hSpawnedTargetsCount+1], a
+    ldh [hSpawnedChordsCount], a
+    ldh [hSpawnedChordsCount+1], a
+    ldh [hFullyClearedChordsCount], a
+    ldh [hFullyClearedChordsCount+1], a
+    ldh [hCurrentStreak], a
+    ldh [hCurrentStreak+1], a
+    ldh [hMaxStreak], a
+    ldh [hMaxStreak+1], a
+    ret
+
+IncTapHitCount:
+    ldh a, [hTapHitCount]
+    inc a
+    ldh [hTapHitCount], a
+    ret nz
+    ld a, [hTapHitCount+1]
+    inc a
+    ldh [hTapHitCount+1], a
+    ret
+
+IncTapMissCount:
+    ldh a, [hTapMissCount]
+    inc a
+    ldh [hTapMissCount], a
+    ret nz
+    ld a, [hTapMissCount+1]
+    inc a
+    ldh [hTapMissCount+1], a
+    ret
+
+IncHoldHeadHitCount:
+    ldh a, [hHoldHeadHitCount]
+    inc a
+    ldh [hHoldHeadHitCount], a
+    ret nz
+    ld a, [hHoldHeadHitCount+1]
+    inc a
+    ldh [hHoldHeadHitCount+1], a
+    ret
+
+IncHoldHeadMissCount:
+    ldh a, [hHoldHeadMissCount]
+    inc a
+    ldh [hHoldHeadMissCount], a
+    ret nz
+    ld a, [hHoldHeadMissCount+1]
+    inc a
+    ldh [hHoldHeadMissCount+1], a
+    ret
+
+IncHoldCompleteCount:
+    ldh a, [hHoldCompleteCount]
+    inc a
+    ldh [hHoldCompleteCount], a
+    ret nz
+    ldh a, [hHoldCompleteCount+1]
+    inc a
+    ldh [hHoldCompleteCount+1], a
+    ret
+
+IncHoldBreakCount:
+    ldh a, [hHoldBreakCount]
+    inc a
+    ldh [hHoldBreakCount], a
+    ret nz
+    ldh a, [hHoldBreakCount+1]
+    inc a
+    ldh [hHoldBreakCount+1], a
+    ret
+
+IncMisPressCount:
+    ldh a, [hMisPressCount]
+    inc a
+    ldh [hMisPressCount], a
+    ret nz
+    ldh a, [hMisPressCount+1]
+    inc a
+    ldh [hMisPressCount+1], a
+    ret
+
+; HL = Target_State ptr
+IncTapOrHoldHeadMissCount:
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, IncHoldHeadMissCount
+    ; missed a tap target
+    jr IncTapMissCount
+
+IncSpawnedTargetsCount:
+    ldh a, [hSpawnedTargetsCount]
+    inc a
+    ldh [hSpawnedTargetsCount], a
+    ret nz
+    ldh a, [hSpawnedTargetsCount+1]
+    inc a
+    ldh [hSpawnedTargetsCount+1], a
+    ret
+
+IncSpawnedChordsCount:
+    ldh a, [hSpawnedChordsCount]
+    inc a
+    ldh [hSpawnedChordsCount], a
+    ret nz
+    ldh a, [hSpawnedChordsCount+1]
+    inc a
+    ldh [hSpawnedChordsCount+1], a
+    ret
+
+IncFullyClearedChordsCount:
+    ldh a, [hFullyClearedChordsCount]
+    inc a
+    ldh [hFullyClearedChordsCount], a
+    ret nz
+    ld a, [hFullyClearedChordsCount+1]
+    inc a
+    ldh [hFullyClearedChordsCount+1], a
+    ret
+
+ResetCurrentStreak:
+    xor a
+    ldh [hCurrentStreak], a
+    ldh [hCurrentStreak+1], a
+    ret
+
+IncCurrentStreak:
+    ldh a, [hCurrentStreak]
+    inc a
+    ldh [hCurrentStreak], a
+    jr nz, UpdateMaxStreak
+    ; overflow, increment hi byte
+    ldh a, [hCurrentStreak+1]
+    inc a
+    ldh [hCurrentStreak+1], a
+    ; fallthrough
+
+; Copies current streak to max streak if current > max
+UpdateMaxStreak:
+    push hl
+    ldh a, [hCurrentStreak+1]
+    ld h, a
+    ldh a, [hCurrentStreak]
+    ld l, a
+    ldh a, [hMaxStreak+1]
+    cp a, h
+    jr c, .update_max
+    ldh a, [hMaxStreak]
+    cp a, l
+    jr nc, .no_update
+    .update_max:
+    ld a, h
+    ldh [hMaxStreak+1], a
+    ld a, l
+    ldh [hMaxStreak], a
+    .no_update:
+    pop hl
+    ret
+
+
+DealTapOrHoldHeadMissDamage:
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, DealHoldHeadMissDamage
+
+DealTapMissDamage:
+    ldh a, [hHealth]
+    sub a, TAP_MISS_DAMAGE
+    jr __SaveHealth
+
+DealHoldHeadMissDamage:
+    ldh a, [hHealth]
+    sub a, HOLD_HEAD_MISS_DAMAGE
+    jr __SaveHealth
+
+DealHoldBreakDamage:
+    ldh a, [hHealth]
+    sub a, HOLD_BREAK_DAMAGE
+    jr __SaveHealth
+
+DealMisPressDamage:
+    ldh a, [hHealth]
+    sub a, MISPRESS_DAMAGE
+    ; fallthrough
+
+__SaveHealth:
+    jr nc, .no_death
+    ; health dropped to zero or below
+    xor a
+    .no_death:
+    ldh [hHealth], a
+    ret
+
+RecoverHealth:
+    ldh a, [hHealth]
+    add a, 1
+    cp HEALTH_MAX
+    jr nc, .cap_health
+    ldh [hHealth], a
+    ret
+    .cap_health:
+    ld a, HEALTH_MAX
+    ldh [hHealth], a
+    ret
+
+CheckIfHealthChanged:
+    ldh a, [hHealthChanged]
+    or a, a
+    ret z
+    ; TODO: handle health change (e.g., update health bar, handle death)
+    xor a
+    ldh [hHealthChanged], a
+    ret
+
+
+; Destroys A, B, C, D, E
+IncHitCueProgress:
+    ldh a, [hHitCueProgressLo]
+    ld b, a
+    ldh a, [hHitCueProgressIncLo]
+    add a, b
+    ldh [hHitCueProgressLo], a
+    ldh a, [hHitCueProgressHi]
+    ld b, a
+    ldh a, [hHitCueProgressIncHi]
+    adc a, b
+    ldh [hHitCueProgressHi], a
+    cp a, b
+    ret z ; return if no need to draw progress bar update
+    ; draw progress bar update
+    push af
+    dec a
+    srl a
+    srl a
+    srl a
+    add a, $01
+    ld e, a
+    ld d, $98
+    ld c, 1
+    call BeginVramString
+    pop af
+    and a, 7
+    jr nz, .10
+    or a, 8 ; full tile
+    .10:
+    add a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    jp EndVramString
+
+; hHitCueStream ptr is expected to be set up already.
+InitializeHitCues:
+    xor a
+    ldh [hHitCueProcessingPending], a
+    ldh [hHitCueProgressLo], a
+    ldh [hHitCueProgressHi], a
+    inc a
+    ldh [hHitCueTimer], a
+    ldh [hHitCueStreamBitCtr], a
+    call ReadHitCueStreamByte ; progress increment high
+    ldh [hHitCueProgressIncHi], a
+    call ReadHitCueStreamByte ; progress increment low
+    ldh [hHitCueProgressIncLo], a
+    ret
 
 OnPatternRowChange:
     ld a, b
@@ -2236,10 +2718,32 @@ OnPatternRowChange:
     ldh [hHitCueProcessingPending], a
     ret
 
+; Builds lookup table of hold timers from speed.
+; Each entry is (3 * speed) + (n * 4 * speed)
+; where n = 0, 1, ..., MAX_HOLD_TIMERS - 1
+InitializeHoldTimerTable:
+    ld hl, wTracks + Track_Speed
+    ld a, [hl] ; speed
+    ld c, a
+    add a, a
+    add a, a
+    ld d, a ; speed * 4
+    sub a, c ; speed * 3
+    ld hl, wHoldTimerTable
+    ld b, MAX_HOLD_TIMERS
+    .loop:
+    ld [hli], a
+    add a, d ; speed * 4
+    dec b
+    jr nz, .loop
+    ret
+
 InitializeTargetLists:
     ld a, ZILCH_ITEM
     ldh [hActiveTargetsHead], a
     ldh [hActiveTargetsTail], a
+    ldh [hHeldTargetsHead], a
+    ldh [hHeldTargetsTail], a
     ldh [hHitTargetsHead], a
     ldh [hHitTargetsTail], a
     ldh [hMissedTargetsHead], a
@@ -2258,8 +2762,7 @@ InitializeTargetLists:
     inc l
     dec b
     jr nz, .loop
-    ld a, ZILCH_ITEM
-    ld [hl], a ; Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next
     ret
 
 ; A = high timer value
@@ -2294,9 +2797,9 @@ TickTimer:
     ldh a, [hTimerHi]
     dec a
     jr nz, .noTimeoutHi
-    ld a, [hTimerCallback]
+    ldh a, [hTimerCallback]
     ld l, a
-    ld a, [hTimerCallback+1]
+    ldh a, [hTimerCallback+1]
     ld h, a
     jp hl
     .noTimeoutHi:
@@ -2336,7 +2839,9 @@ SetMemory:
 TurnOnLCD:
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG8000 | LCDCF_BG9800
     ldh [hShadowLCDC], a
-    ldh [rLCDC], a ; TODO: why must it be done immediately?
+    ; Write to actual LCDC immediately to get vblanks firing.
+    ; It's safe to do so at any time
+    ldh [rLCDC], a
     ret
 
 ; https://gbdev.io/pandocs/LCDC.html#lcdc7--lcd-enable
@@ -2348,6 +2853,7 @@ TurnOffLCD:
     ldh a, [hShadowLCDC]
     and a, ~LCDCF_ON
     ldh [hShadowLCDC], a
+    ; Do NOT write to actual LCDC here - wait for VBlank to do so safely
     ret
 
 ; Program main function, called each frame in NMI handler
@@ -2355,13 +2861,17 @@ GoMainFunction:
     ldh a, [hMainState]
     rst JumpTable
 dw MainFunc_NoOp        ; 0
-dw MainFunc_TitleInit   ; 1
-dw MainFunc_TitleScreen ; 2
+dw MainFunc_PlaytestSettingsInit   ; 1
+dw MainFunc_PlaytestSettings ; 2
 dw MainFunc_GameInit    ; 3
 dw MainFunc_Gameplay    ; 4
 dw MainFunc_WaitForAllClear ; 5
 dw MainFunc_Delay       ; 6
 dw MainFunc_GameFinished ; 7
+dw MainFunc_SongSessionResultsInit ; 8
+dw MainFunc_SongSessionResults ; 9
+dw MainFunc_SongSelectionInit ; 10
+dw MainFunc_SongSelection ; 11
 
 MainFunc_NoOp:
     ret
@@ -2375,15 +2885,69 @@ MainFunc_Delay_TimerTimeout:
     ldh [hMainState], a
     ret
 
-MainFunc_TitleInit:
-    ; standard palettes
-    ld  a, %00011011
+
+NEWCHARMAP playtestsettings
+CHARMAP " ", $00
+CHARMAP "0", $01
+CHARMAP "1", $02
+CHARMAP "2", $03
+CHARMAP "3", $04
+CHARMAP "4", $05
+CHARMAP "5", $06
+CHARMAP "6", $07
+CHARMAP "7", $08
+CHARMAP "8", $09
+CHARMAP "9", $0A
+CHARMAP "A", $0B
+CHARMAP "B", $0C
+CHARMAP "C", $0D
+CHARMAP "D", $0E
+CHARMAP "E", $0F
+CHARMAP "F", $10
+CHARMAP "G", $11
+CHARMAP "H", $12
+CHARMAP "I", $13
+CHARMAP "J", $14
+CHARMAP "K", $15
+CHARMAP "L", $16
+CHARMAP "M", $17
+CHARMAP "N", $18
+CHARMAP "O", $19
+CHARMAP "P", $1A
+CHARMAP "Q", $1B
+CHARMAP "R", $1C
+CHARMAP "S", $1D
+CHARMAP "T", $1E
+CHARMAP "U", $1F
+CHARMAP "V", $20
+CHARMAP "W", $21
+CHARMAP "X", $22
+CHARMAP "Y", $23
+CHARMAP "Z", $24
+CHARMAP ":", $25
+CHARMAP "*", $26
+CHARMAP "!", $27
+CHARMAP "-", $28
+CHARMAP "%", $29
+
+MainFunc_PlaytestSettingsInit:
+    ld a, GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE
+    ldh [hGameBehaviorState1], a
+    ld a, $30
+    ldh [hIntensityMax], a
+    xor a
+    ldh [hCurrentPlaytestSetting], a
+
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
 
-    ld de, TitleScreenTiles
+    ld de, PlaytestSettingsScreenTiles
     ld hl, $8000
-    ld bc, TitleScreenTilesEnd - TitleScreenTiles
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
     ; Clear tilemap
@@ -2392,8 +2956,18 @@ MainFunc_TitleInit:
     ld bc, $240
     call SetMemory
 
-    ld hl, TitleScreenTilemap
+    ld hl, PlaytestSettingsScreenTilemap
     call WriteVramStrings
+
+    ; Write initial settings to screen
+    call PrintCurrentPlaytestSettingIndicator
+    call PrintIntensityMaxPlaytestSetting
+    call PrintHoldNotesPlaytestSetting
+    call PrintHoldNotesStylePlaytestSetting
+    call PrintRandomNotesPlaytestSetting
+    call PrintRandomNotesStylePlaytestSetting
+    call PrintMaxCueNotesPlaytestSetting
+    call FlushVramBuffer
 
     call HideAllSprites
 
@@ -2403,25 +2977,493 @@ MainFunc_TitleInit:
     ldh [hSoundStatus], a ; mute all channels
 
     ld a, 2
-    ldh [hMainState], a ; wait for Start
-    call TurnOnLCD
+    ldh [hMainState], a ; playtest settings
+    jp TurnOnLCD
 
-MainFunc_TitleScreen:
+PrintIntensityMaxPlaytestSetting:
+    ld de, $9851
+    ld c, 1
+    call BeginVramString
+    ldh a, [hIntensityMax]
+    srl a
+    srl a
+    srl a
+    srl a ; divide by 16
+    add a, 1
+    ld [hli], a
+    jp EndVramString
+
+PrintHoldNotesPlaytestSetting:
+    ld de, $988E
+    ld c, 3
+    call BeginVramString
+    ld a, $19 ; 'O'
+    ld [hli], a
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .holdNotesOff
+    ; hold notes on
+    ld a, $18 ; 'N'
+    ld [hli], a
+    ld a, $00 ; ' '
+    ld [hli], a
+    jp EndVramString
+    .holdNotesOff:
+    ld a, $10 ; 'F'
+    ld [hli], a
+    ld a, $10 ; 'F'
+    ld [hli], a
+    jp EndVramString
+
+PrintHoldNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .notAvailable
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    jr z, .normalStyle
+    ; uniform style
+    ld de, .uniformStyleString
+    jp CopyStringToVramBuffer
+    .normalStyle:
+    ld de, .normalStyleString
+    jp CopyStringToVramBuffer
+    .notAvailable:
+    ld de, .notAvailableString
+    jp CopyStringToVramBuffer
+.uniformStyleString:
+    db $98,$CB,7,"UNIFORM"
+.normalStyleString:
+    db $98,$CB,7,"NORMAL "
+.notAvailableString:
+    db $98,$CB,7,"---    "
+
+PrintRandomNotesPlaytestSetting:
+    ld de, $9910
+    ld c, 3
+    call BeginVramString
+    ld a, $19 ; 'O'
+    ld [hli], a
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .randomNotesOff
+    ; random notes on
+    ld a, $18 ; 'N'
+    ld [hli], a
+    ld a, $00 ; ' '
+    ld [hli], a
+    jp EndVramString
+    .randomNotesOff:
+    ld a, $10 ; 'F'
+    ld [hli], a
+    ld a, $10 ; 'F'
+    ld [hli], a
+    jp EndVramString
+
+PrintRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .notAvailable
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .deterministic
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .seeded
+    ; full
+    ld de, .wildStyleString
+    jp CopyStringToVramBuffer
+    .deterministic:
+    ld de, .fixedStyleString
+    jp CopyStringToVramBuffer
+    .seeded:
+    ld de, .seededStyleString
+    jp CopyStringToVramBuffer
+    .notAvailable:
+    ld de, .notAvailableString
+    jp CopyStringToVramBuffer
+.fixedStyleString:
+    db $99,$4B,6,"FIXED "
+.seededStyleString:
+    db $99,$4B,6,"SEEDED"
+.wildStyleString:
+    db $99,$4B,6,"WILD  "
+.notAvailableString:
+    db $99,$4B,6,"---   "
+
+PrintMaxCueNotesPlaytestSetting:
+    ; not supported yet
+    ret
+    ld de, $9991
+    ld c, 1
+    call BeginVramString
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    add a, 1
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentPlaytestSettingIndicator:
+    ld d, $02
+    ldh a, [hCurrentPlaytestSetting]
+    inc a
+    or a, $60
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 1
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+PrintCurrentPlaytestSettingIndicator:
+    ld d, $02
+    ldh a, [hCurrentPlaytestSetting]
+    inc a
+    or a, $60
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 1
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_PlaytestSettings:
     ldh a, [hButtonsPressed]
-    and a, PADF_START
-    ret z ; exit if not pressed
+    bit PADB_START, a
+    jr z, .startNotPressed
+    jp .startPressed
+
+    .startNotPressed:
+    bit PADB_UP, a
+    jr nz, .previousSetting
+    bit PADB_DOWN, a
+    jr nz, .nextSetting
+    bit PADB_SELECT, a
+    jr nz, .nextSetting
+    bit PADB_LEFT, a
+    jr nz, .previousValue
+    bit PADB_B, a
+    jr nz, .previousValue
+    bit PADB_RIGHT, a
+    jr nz, .nextValue
+    bit PADB_A, a
+    jr nz, .nextValue
+    ret
+
+    .previousSetting:
+    jp PreviousPlaytestSetting
+
+    .nextSetting:
+    jp NextPlaytestSetting
+
+    .previousValue:
+    jp PreviousPlaytestSettingValue
+
+    .nextValue:
+    jp NextPlaytestSettingValue
+
+    .startPressed:
     ld a, 3
     ldh [hMainState], a ; game init
     jp TurnOffLCD
 
+PreviousPlaytestSetting:
+    call EraseCurrentPlaytestSettingIndicator
+    .previousSettingAgain:
+    ldh a, [hCurrentPlaytestSetting]
+    or a
+    jr nz, .noWrapToLastSetting
+    ld a, PLAYTEST_SETTINGS_COUNT
+    .noWrapToLastSetting:
+    dec a
+    ldh [hCurrentPlaytestSetting], a
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .skipHoldNotesStylePreviousSettingIfNotApplicable
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .skipRandomNotesStylePreviousSettingIfNotApplicable
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipHoldNotesStylePreviousSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .previousSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipRandomNotesStylePreviousSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .previousSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+NextPlaytestSetting:
+    call EraseCurrentPlaytestSettingIndicator
+    .nextSettingAgain:
+    ldh a, [hCurrentPlaytestSetting]
+    inc a
+    cp PLAYTEST_SETTINGS_COUNT
+    jr c, .noWrapToFirstSetting
+    xor a
+    .noWrapToFirstSetting:
+    ldh [hCurrentPlaytestSetting], a
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .skipHoldNotesStyleNextSettingIfNotApplicable
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .skipRandomNotesStyleNextSettingIfNotApplicable
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipHoldNotesStyleNextSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .nextSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+    .skipRandomNotesStyleNextSettingIfNotApplicable:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr z, .nextSettingAgain
+    jp PrintCurrentPlaytestSettingIndicator
+
+PreviousPlaytestSettingValue:
+    ldh a, [hCurrentPlaytestSetting]
+    cp PLAYTEST_SETTING__INTENSITY_MAX
+    jr z, .decreaseIntensityMax
+    cp PLAYTEST_SETTING__HOLD_NOTES
+    jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .toggleHoldNotesStyle
+    cp PLAYTEST_SETTING__RANDOM_NOTES
+    jr z, .toggleRandomNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .previousRandomNotesStyle
+    cp PLAYTEST_SETTING__MAX_CUE_NOTES
+    jr z, .decreaseMaxCueNotes
+    ; unhandled setting
+    jp Reset
+
+    .decreaseIntensityMax:
+    ldh a, [hIntensityMax]
+    sub a, $10
+    ldh [hIntensityMax], a
+    jp PrintIntensityMaxPlaytestSetting
+
+    .toggleHoldNotes:
+    jp ToggleHoldNotesPlaytestSetting
+
+    .toggleHoldNotesStyle:
+    jp ToggleHoldNotesStylePlaytestSetting
+
+    .toggleRandomNotes:
+    jp ToggleRandomNotesPlaytestSetting
+
+    .previousRandomNotesStyle:
+    jp PreviousRandomNotesStylePlaytestSetting
+
+    .decreaseMaxCueNotes:
+    ldh a, [hGameBehaviorState1]
+    and ~GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    dec a
+    jr nz, .noWrapToMax
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE
+    .noWrapToMax:
+    or a, b
+    ldh [hGameBehaviorState1], a
+    jp PrintMaxCueNotesPlaytestSetting
+
+NextPlaytestSettingValue:
+    ldh a, [hCurrentPlaytestSetting]
+    cp PLAYTEST_SETTING__INTENSITY_MAX
+    jr z, .increaseIntensityMax
+    cp PLAYTEST_SETTING__HOLD_NOTES
+    jr z, .toggleHoldNotes
+    cp PLAYTEST_SETTING__HOLD_NOTES_STYLE
+    jr z, .toggleHoldNotesStyle
+    cp PLAYTEST_SETTING__RANDOM_NOTES
+    jr z, .toggleRandomNotes
+    cp PLAYTEST_SETTING__RANDOM_NOTES_STYLE
+    jr z, .nextRandomNotesStyle
+    cp PLAYTEST_SETTING__MAX_CUE_NOTES
+    jr z, .increaseMaxCueNotes
+    ; unhandled setting
+    jp Reset
+
+    .increaseIntensityMax:
+    ldh a, [hIntensityMax]
+    add a, $10
+    ldh [hIntensityMax], a
+    jp PrintIntensityMaxPlaytestSetting
+
+    .toggleHoldNotes:
+    jp ToggleHoldNotesPlaytestSetting
+
+    .toggleHoldNotesStyle:
+    jp ToggleHoldNotesStylePlaytestSetting
+
+    .toggleRandomNotes:
+    jp ToggleRandomNotesPlaytestSetting
+
+    .nextRandomNotesStyle:
+    jp NextRandomNotesStylePlaytestSetting
+
+    .increaseMaxCueNotes:
+    ldh a, [hGameBehaviorState1]
+    and ~GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    ld b, a
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    inc a
+    cp GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE + 1
+    jr c, .noWrapToOne
+    ld a, 1
+    .noWrapToOne:
+    or a, b
+    ldh [hGameBehaviorState1], a
+    jp PrintMaxCueNotesPlaytestSetting
+
+ToggleHoldNotesPlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    jr z, .turnOnHoldNotes
+    ; turn off hold notes
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+    ldh [hGameBehaviorState0], a
+    call PrintHoldNotesPlaytestSetting
+    jp PrintHoldNotesStylePlaytestSetting
+    .turnOnHoldNotes:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    ldh [hGameBehaviorState0], a
+    call PrintHoldNotesPlaytestSetting
+    jp PrintHoldNotesStylePlaytestSetting
+
+ToggleHoldNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    jr z, .setUniformStyle
+    ; set normal style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT
+    ldh [hGameBehaviorState0], a
+    jp PrintHoldNotesStylePlaytestSetting
+    .setUniformStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    or GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION
+    ldh [hGameBehaviorState0], a
+    jp PrintHoldNotesStylePlaytestSetting
+
+ToggleRandomNotesPlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    jr nz, .turnOffRandomNotes
+    ; turn on random notes
+    ldh a, [hGameBehaviorState0]
+    set GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    ldh [hGameBehaviorState0], a
+    ; default to deterministic style when enabling
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    call PrintRandomNotesPlaytestSetting
+    jp PrintRandomNotesStylePlaytestSetting
+    .turnOffRandomNotes:
+    ldh a, [hGameBehaviorState0]
+    res GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a
+    ldh [hGameBehaviorState0], a
+    call PrintRandomNotesPlaytestSetting
+    jp PrintRandomNotesStylePlaytestSetting
+
+PreviousRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .setWildStyle
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .setDeterministicStyle
+    ; set seeded style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setDeterministicStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setWildStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+
+NextRandomNotesStylePlaytestSetting:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    jr z, .setSeededStyle
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    jr z, .setWildStyle
+    ; set deterministic style
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setSeededStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+    .setWildStyle:
+    ldh a, [hGameBehaviorState0]
+    and ~GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    or GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    ldh [hGameBehaviorState0], a
+    jp PrintRandomNotesStylePlaytestSetting
+
+
 MainFunc_GameInit:
-    ld hl, GameScreenTilemap
-    call WriteVramStrings
-
-    ; initialize seed
-    ldh a, [hFrameCounter]
-    ldh [hRandom], a
-
     call GameInit
 
     ld a, 4
@@ -2434,13 +3476,18 @@ MainFunc_Gameplay:
     call GetLaneInputsFromButtons
     call ProcessHitCues
     call ProcessActiveTargets
+    call ProcessHeldTargets
     call ProcessHitTargets
-    jp ProcessMissedTargets
+    call ProcessMissedTargets
+    jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
     call MainFunc_Gameplay
     ldh a, [hActiveTargetsHead]
     cp ZILCH_ITEM ; any active targets?
+    ret nz ; exit if so
+    ldh a, [hHeldTargetsHead]
+    cp ZILCH_ITEM ; any held targets?
     ret nz ; exit if so
     ldh a, [hHitTargetsHead]
     cp ZILCH_ITEM ; any hit targets?
@@ -2453,8 +3500,8 @@ MainFunc_WaitForAllClear:
     jp SetTimerWithNextStateTimeout
 
 MainFunc_GameFinished:
-    ld a, 1
-    ldh [hMainState], a ; back to title init
+    ld a, 8
+    ldh [hMainState], a ; to song session results init
     jp TurnOffLCD
 
 MACRO Align8
@@ -2467,29 +3514,46 @@ ProcessHitCues:
     ret z ; exit if no processing pending
     dec a
     ldh [hHitCueProcessingPending], a
+    ; set lane defaults
+    xor a
+    ld hl, wTargetDurationByLane
+    ld [hli], a
+    ld [hli], a
+    ld [hli], a
+    ld [hl], a
+    ldh [hSuppressedLanes], a
+    ld a, $30
+    ld hl, wLaneIntensities
+    ld [hli], a
+    ld [hli], a
+    ld [hli], a
+    ld [hl], a
     ; process hit cue entry
-    ld a, HIT_CUE_PAYLOAD_WIDTH
+    ld a, HIT_CUE_BASE_PAYLOAD_WIDTH
     call ReadHitCueStreamBits
-    cp a, 15 ; end of stream?
-    jr z, .endOfStream
     or a
-    jr z, .20
-    ; TODO: respect the type bits
-    call Prng
-    and a, 15
-    or a
-    jr nz, .10
-    inc a
-    .10:
-    cp a, 12
-    jr c, .20
-    sub a, 4
-    .20:
-    add a, LOW(.LanesSpecifierMasks)
+    jr z, .setNextTimer ; it's just a delay, no targets to spawn
+    cp 12 ; extended payload?
+    jr nc, .extendedPayload
+    ld c, a ; chord id (nonzero)
+
+    .processLanesAfterExtensions:
+    call SuppressLanesByIntensity
+    call SuppressLanesByMaxNotesPerCue
+    push bc ; save chord id
+    call IncHitCueProgress ; make sure progress is updated even if no targets are spawned
+    pop bc ; restore chord id
+    ld a, c ; chord id
+    or a, LOW(.ChordIdToLanesBitmask)
     ld l, a
-    ld h, HIGH(.LanesSpecifierMasks)
-    ld a, [hl] ; lane bits
-    ld b, a
+    ld h, HIGH(.ChordIdToLanesBitmask)
+    ld b, [hl] ; lane bits
+    ldh a, [hSuppressedLanes]
+    xor a, b
+    and a, b
+    jr z, .setNextTimer ; no lanes to spawn
+
+    ld b, a ; effective lane bits
     xor a ; lane
     .laneLoop:
     srl b ; lane bit into carry
@@ -2497,6 +3561,7 @@ ProcessHitCues:
     push af ; save lane
     push bc ; save lane bits
     call AddTarget
+    call IncSpawnedTargetsCount
     pop bc ; restore lane bits
     pop af ; restore lane
     .nextLane:
@@ -2504,7 +3569,9 @@ ProcessHitCues:
     cp 4    ; done all lanes?
     jr nz, .laneLoop
 
-    ; set next timer
+    call IncSpawnedChordsCount
+
+    .setNextTimer:
     ld a, HIT_CUE_DELAY_WIDTH
     call ReadHitCueStreamBits
     ; map value to timer
@@ -2515,11 +3582,285 @@ ProcessHitCues:
     ldh [hHitCueTimer], a
     ret
 
+    .extendedPayload:
+    and a, 3 ; lower 2 bits of chord id
+    ld c, a
+    ld a, 2
+    push bc
+    call ReadHitCueStreamBits ; high 2 bits of chord id
+    pop bc
+    sla a
+    sla a
+    or c ; full chord id
+    cp 15 ; end of stream?
+    jp z, .endOfStream
+    ; not end of stream, process all extensions
+    ld c, a ; save chord id
+
+    ; process intensities
+    ld a, 1
+    push bc ; save chord id
+    call ReadHitCueStreamBits ; intensities flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .processRandomization
+    ; set intensities for lanes in chord
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .intensitySingleLaneChord
+    ; handle multi-lane chord
+    .intensityMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; intensity flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have an intensity?
+    ld a, [hli] ; lane index
+    jr z, .skipIntensityForLane
+    ; read and set intensity for this lane
+    push af ; save lane index
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; intensity
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    sla a
+    sla a
+    sla a
+    sla a
+    ld b, a ; intensity << 4
+    pop af ; restore lane index
+    or a, LOW(wLaneIntensities)
+    ld e, a
+    ld d, HIGH(wLaneIntensities)
+    ld a, b
+    ld [de], a ; set intensity for lane
+    .skipIntensityForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .intensityMultiLaneChordLoop
+    jr .processRandomization
+
+    .intensitySingleLaneChord:
+    ld a, [hl] ; lane index
+    push af ; save lane index
+    push bc
+    ld a, 4
+    call ReadHitCueStreamBits ; intensity
+    pop bc
+    sla a
+    sla a
+    sla a
+    sla a
+    ld b, a ; intensity << 4
+    pop af ; restore lane index
+    or a, LOW(wLaneIntensities)
+    ld l, a
+    ld h, HIGH(wLaneIntensities)
+    ld [hl], b ; set intensity for lane
+
+    .processRandomization:
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; randomization flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .processHolds
+    ; process randomization
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .randomizeSingleLaneChord
+    ; handle multi-lane chord
+    .randomizeMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; "apply randomization" flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have randomization?
+    ld a, [hli] ; lane index
+    jr z, .skipRandomizationForLane
+    ; decide if this lane is to be suppressed
+    push af ; save lane index
+    ; if RANDOM_ENABLED is 0, never suppress ( = treat as deterministic lane)
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a ; randomization enabled?
+    jr nz, .considerRandomizationForLane
+    pop af ; restore lane index
+    jr .skipRandomizationForLane
+    .considerRandomizationForLane:
+    ; TODO: if ALLOW_NONE is 0, make sure at least one candidate lane remains
+    call RandomDecision
+    and a, 1 ; 50% chance
+    ld b, a
+    pop af ; restore lane index
+    bit 0, b
+    jr z, .skipRandomizationForLane
+    ; suppress this lane
+    ; compute the lane bitmask in b
+    ld b, 1
+    or a
+    jr z, .randomizeLaneOfMultiLaneChord_10
+    .randomizeLaneOfMultiLaneChord_20:
+    sla b
+    dec a
+    jr nz, .randomizeLaneOfMultiLaneChord_20
+    .randomizeLaneOfMultiLaneChord_10:
+    ldh a, [hSuppressedLanes]
+    or b
+    ldh [hSuppressedLanes], a
+    .skipRandomizationForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .randomizeMultiLaneChordLoop
+    jr .processHolds
+
+    .randomizeSingleLaneChord:
+    ; decide if the lane is to be suppressed
+    ; if RANDOM_ENABLED is 0, never suppress ( = treat as deterministic lane)
+    ldh a, [hGameBehaviorState0]
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ENABLED, a ; randomization enabled?
+    jr z, .processHolds
+    bit GAME_BEHAVIOR_STATE0_BIT__RANDOM_ALLOW_NONE, a
+    jr z, .processHolds
+    call RandomDecision
+    and a, 1 ; 50% chance
+    jr z, .processHolds
+    ; suppress the lane
+    ld a, [hl] ; lane index
+    ; compute the lane bitmask in b
+    ld b, 1
+    or a
+    jr z, .randomizeSingleLaneChord_10
+    .randomizeSingleLaneChord_20:
+    sla b
+    dec a
+    jr nz, .randomizeSingleLaneChord_20
+    .randomizeSingleLaneChord_10:
+    ldh a, [hSuppressedLanes]
+    or b
+    ldh [hSuppressedLanes], a
+
+    .processHolds:
+    ld a, 1
+    push bc ; save chord id
+    call ReadHitCueStreamBits ; holds flag
+    pop bc ; restore chord id
+    bit 0, a
+    jr z, .doneProcessingHolds
+    ; set hold durations for lanes in chord
+    ld a, c ; chord id (nonzero)
+    dec a
+    sla a
+    sla a
+    or a, LOW(.ChordIdToLanesMetadata)
+    ld l, a
+    ld h, HIGH(.ChordIdToLanesMetadata)
+    ld a, [hli] ; number of lanes
+    cp 1
+    jr z, .holdSingleLaneChord
+    ; handle multi-lane chord
+    .holdMultiLaneChordLoop:
+    push af ; save number of lanes
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 1
+    call ReadHitCueStreamBits ; hold flag for lane
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    bit 0, a ; does this lane have a hold?
+    ld a, [hli] ; lane index
+    jr z, .skipHoldForLane
+    ; read and set hold duration for this lane
+    push af ; save lane index
+    push hl ; save metadata ptr
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; hold duration - 1
+    pop bc ; restore chord id
+    pop hl ; restore metadata ptr
+    inc a
+    sla a
+    sla a
+    ld b, a ; duration << 2
+    pop af ; restore lane index
+    or a, LOW(wTargetDurationByLane)
+    ld e, a
+    ld d, HIGH(wTargetDurationByLane)
+    ; if holds should be converted to taps, don't set hold duration anyway
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
+    jr z, .skipHoldForLane ; then don't set duration anyway
+    ld a, b
+    ld [de], a ; set hold duration for lane
+    .skipHoldForLane:
+    pop af ; restore number of lanes
+    dec a
+    jr nz, .holdMultiLaneChordLoop
+    jr .doneProcessingHolds
+
+    .holdSingleLaneChord:
+    ld a, [hl] ; lane index
+    push af ; save lane index
+    push bc ; save chord id
+    ld a, 4
+    call ReadHitCueStreamBits ; hold duration - 1
+    pop bc ; restore chord id
+    inc a
+    sla a
+    sla a
+    ld b, a ; duration << 2
+    pop af ; restore lane index
+    or a, LOW(wTargetDurationByLane)
+    ld l, a
+    ld h, HIGH(wTargetDurationByLane)
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY ; convert holds to taps?
+    jr z, .doneProcessingHolds ; then don't set duration anyway
+    ld [hl], b ; set hold duration for lane
+
+    .doneProcessingHolds:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__HOLD_MODE
+    cp GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION
+    jr nz, .doneProcessingExtensions
+    call SetUniformHoldDurations
+
+    .doneProcessingExtensions:
+    jp .processLanesAfterExtensions
+
     .endOfStream:
     ld hl, 0
     call SetPatternRowCallback
     ld a, 5
     ldh [hMainState], a ; wait for all clear
+    .ceilProgress:
+    call IncHitCueProgress
+    ldh a, [hHitCueProgressHi]
+    cp HIT_CUE_MAX_PROGRESS
+    jr c, .ceilProgress
     ret
 
 MACRO Align16
@@ -2527,7 +3868,7 @@ ds ((@ + $f) & $fff0) - @
 ENDM
 
 Align16
-.LanesSpecifierMasks:
+.ChordIdToLanesBitmask:
 db %0000 ; 0 - none
 db %0001 ; 1 - left
 db %0010 ; 2 - right
@@ -2541,12 +3882,99 @@ db %1100 ; 9 - B + A
 db %1101 ; 10 - left + B + A
 db %1110 ; 11 - right + B + A
 
+MACRO Align64
+ds ((@ + $3f) & $ffc0) - @
+ENDM
+
+Align64
+.ChordIdToLanesMetadata:
+; number of lanes, lane indices, padding
+db 1,0,0,0
+db 1,1,0,0
+db 1,2,0,0
+db 1,3,0,0
+db 2,0,2,0
+db 2,0,3,0
+db 2,1,2,0
+db 2,1,3,0
+db 2,2,3,0
+db 3,0,2,3
+db 3,1,2,3
+
 Align8
 .HitCueTimerTable:
 db 1,2,4,8,12,16,24,32
 
+SetUniformHoldDurations:
+    ; first pass: find min hold duration among the lanes in the chord
+    ld hl, wTargetDurationByLane
+    ld b, $ff ; best
+    ld d, 4 ; lane counter
+    .findLoop:
+    ld a, [hli]
+    or a
+    jr z, .nextLane
+    cp a, b
+    jr nc, .nextLane
+    ld b, a ; new best
+    .nextLane:
+    dec d
+    jr nz, .findLoop
+    ; second pass: set all hold durations to best
+    ld hl, wTargetDurationByLane
+    ld d, 4 ; lane counter
+    .setLoop:
+    ld a, [hl]
+    or a
+    jr z, .nextLane2
+    ld [hl], b ; set to best
+    .nextLane2:
+    inc l
+    dec d
+    jr nz, .setLoop
+    ret
+
+; Destroys: HL, B
+; Suppresses lanes whose intensity is below hIntensityMax
+SuppressLanesByIntensity:
+    ldh a, [hIntensityMax]
+    ld hl, wLaneIntensities
+    ld b, 0
+    cp [hl] ; lane 0 intensity
+    jr nc, .10
+    set 0, b ; suppress lane 0
+    .10:
+    inc l
+    cp [hl] ; lane 1 intensity
+    jr nc, .20
+    set 1, b ; suppress lane 1
+    .20:
+    inc l
+    cp [hl] ; lane 2 intensity
+    jr nc, .30
+    set 2, b ; suppress lane 2
+    .30:
+    inc l
+    cp [hl] ; lane 3 intensity
+    jr nc, .40
+    set 3, b ; suppress lane 3
+    .40:
+    ldh a, [hSuppressedLanes]
+    or a, b
+    ldh [hSuppressedLanes], a
+    ret
+
+; C = chord id
+SuppressLanesByMaxNotesPerCue:
+    ldh a, [hGameBehaviorState1]
+    and GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE
+    cp GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE ; no limit?
+    ret z
+    ; TODO: implement suppression based on intensity order
+    ret
+
 ; A = lane (bits 1..0)
-; Destroys: A, B, HL
+; Destroys: A, B, HL, DE
 AddTarget:
     push af ; save lane
 ; grab target from free list
@@ -2564,10 +3992,15 @@ AddTarget:
     ld [hli], a ; Target_Next (this will become the new tail)
 ; initialize the target
     pop af ; restore lane
+    ld b, a ; lane
+  ; get duration
+    ld d, HIGH(wTargetDurationByLane)
+    or a, LOW(wTargetDurationByLane)
+    ld e, a
+    ld a, [de] ; duration
+;    ld a, 2 << 2 ; for testing, fixed hold
+    or a, b ; add lane
     ld [hli], a ; Target_State
-; TODO: set duration
-;    tya
-;    sta targets_2.duration,x
     xor a
     ld [hli], a ; Target_PosY_Frac
     ld a, 0 ; initial Y position
@@ -2627,6 +4060,13 @@ ReadHitCueStreamBits:
     ldh [hHitCueStreamBitCtr], a
     ld a, c ; final result
     ret
+
+; Reads a byte from hit cue stream
+; Returns: A = bits read
+; Destroys: B, C, D, H, L
+ReadHitCueStreamByte:
+    ld a, 8
+    jr ReadHitCueStreamBits
 
 ; Computes hLaneInputPosedge and hLaneInput from hButtonsPressed and hButtonsHeld
 ; Destroys: A, B
@@ -2710,7 +4150,7 @@ ProcessActiveTargets:
     .10:
     ldh a, [hCheckedLanes]
     and c
-    jr nz, .moveAndDraw ; we already checked this lane, target can't possible be within hit range
+    jr nz, .moveAndDraw ; we already checked this lane, target can't possibly be within hit range
 
     ldh a, [hCheckedLanes]
     or c ; set lane bit
@@ -2721,6 +4161,7 @@ ProcessActiveTargets:
     ld a, [hl-] ; Target_PosY_Int
     dec l ; Target_State
     sub HIT_START_Y
+    ; TODO: if not hittable, check if it's inside grace window ("nearly hittable")
     jr c, .moveAndDraw ; not hittable
     sub HIT_EXTENT
     jr nc, .missed
@@ -2738,13 +4179,28 @@ ProcessActiveTargets:
     ldh a, [hHitLanes]
     or c ; set lane bit
     ldh [hHitLanes], a
-    jr .next ; don't draw. It will be moved to hit list and processed by ProcessHitTargets
+    jr .next ; don't draw. It will be moved to hit list or held list by SweepActiveTargets()
 
     ; hl should point to Target_State
     .moveAndDraw:
     call MoveTarget
-    call DrawNormalTarget
-
+    ld a, [hl] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, .isHoldTarget
+    ; is a tap target
+    call DrawTapTarget
+    jr .next
+    .isHoldTarget:
+; map duration to tail length in pixels
+    srl a
+    srl a
+    dec a
+    or a, LOW(wHoldTimerTable)
+    ld e, a
+    ld d, HIGH(wHoldTimerTable)
+    ld a, [de] ; timer
+    ldh [hDrawHoldLength], a
+    call DrawHoldTarget
     .next:
     ld a, l
     and a, ~3 ; Target_Next
@@ -2754,14 +4210,9 @@ ProcessActiveTargets:
     jr .loop
 
     .missed:
-    ; missing a normal target is punished - if player(s) alive
-    ; TODO:
-;  + jsr inc_missed_count
-;    jsr reset_points_level
-;    jsr reset_streak
-;    jsr dec_vu_level
-;  + lda miss_damage
-;    jsr sub_energy_with_pain
+    call IncTapOrHoldHeadMissCount
+    call DealTapOrHoldHeadMissDamage
+    call ResetCurrentStreak
 
 ; turn off the square wave channels
     ldh [hSoundStatus], a
@@ -2772,44 +4223,8 @@ ProcessActiveTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
-    ld a, [hl] ; old Target_Next
-    ld b, a ; save Target_Next
-    ld a, ZILCH_ITEM
-    ld [hl], a ; Target_Next (end of list)
-    ldh a, [hMissedTargetsTail]
-    ld c, a ; save old tail
-    ld a, l
-    ldh [hMissedTargetsTail], a ; make this the new tail
-    ld a, c ; old tail
-    cp ZILCH_ITEM ; starting the list?
-    jr nz, .30
-    ld a, l
-    ldh [hMissedTargetsHead], a
-    jr .40
-    .30:
-    ld a, l
-    push af ; save this target
-    ld l, c ; old tail
-    ld [hl], a ; Target_Next (point old tail to this)
-    pop af ; restore this target
-    ld l, a
-    .40:
-    ldh a, [hActiveTargetsTail]
-    cp a, l ; removing the tail?
-    ldh a, [hPrev]
-    jr nz, .50
-    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
-    .50:
-    cp ZILCH_ITEM ; removing the head?
-    jr nz, .60
-    ld a, b ; old Target_Next
-    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
-    jp .loop
-    .60:
-    ld l, a
-    ld a, b ; old Target_Next
-    ld [hl], a ; previous Target_Next = this Target_Next
-    jp .loop
+    call MoveActiveTargetToMissedList
+    jr .loop
 
 ; HL = pointer to Target_State
 MoveTarget:
@@ -2819,14 +4234,16 @@ MoveTarget:
     ld a, [hl] ; Target_PosY_Int
     inc a
     ld [hl-], a ; Target_PosY_Int
+    dec l ; Target_State
     ret
 
-; HL = pointer to Target_PosY_Frac
-DrawNormalTarget:
-    push hl ; Target_PosY_Frac
+; HL = pointer to Target_State
+DrawTapTarget:
+    push hl ; Target_State
     ld d, h
     ld e, l
     call BeginDrawSprites
+    inc e ; Target_PosY_Frac
     inc e ; Target_PosY_Int
     ld a, [de] ; Target_PosY_Int
     ld b, a
@@ -2835,24 +4252,19 @@ DrawNormalTarget:
     ld a, [de] ; Target_State
     and a, 3 ; lane
     sla a
-    sla a ; lane * 4
-    push af
     sla a
+    sla a
+    ld c, a ; lane * 8
     sla a ; lane * 16 (0, 16, 32, 48)
-    bit 5, a ; is it lane 2 or 3 (B or A)?
-    jr z, .10
-    add 16 ; middle gap
-    .10:
-    add a, 40 ; left offset
+    add a, c ; lane * 24
+    add a, 20 ; left offset
     ld c, a ; x
     ; left half
     ld a, b ; y
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    pop af ; lane * 4
-    push af
-    add a, $76
+    ld a, $6c
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -2862,13 +4274,97 @@ DrawNormalTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    pop af ; lane * 2
-    add a, $76+2
+    ld a, $6c
+    ld [hli], a ; tile
+    ld a, OAMF_XFLIP
+    ld [hli], a  ; attributes
+    call EndDrawSprites
+    pop hl ; Object_State
+    ret
+
+; HL = pointer to Target_State
+; hDrawHoldLength = length of hold tail in pixels
+; Destroys: AF, BC, DE
+DrawHoldTarget:
+    push hl ; Target_State
+; Step 1. Draw the head (same as tap target, but different tile)
+    ld d, h
+    ld e, l
+    call BeginDrawSprites
+    inc e ; Target_PosY_Frac
+    inc e ; Target_PosY_Int
+    ld a, [de] ; Target_PosY_Int
+    ld b, a
+    dec e ; Target_PosY_Frac
+    dec e ; Target_State
+    ld a, [de] ; Target_State
+    and a, 3 ; lane
+    sla a
+    sla a
+    sla a
+    ld c, a ; lane * 8
+    sla a ; lane * 16 (0, 16, 32, 48)
+    add a, c ; lane * 24
+    add a, 20 ; left offset
+    ld c, a ; x
+    ; left half
+    ld a, b ; y
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, $6e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
+    ; right half
+    ld a, b ; y
+    ld [hli], a ; y
+    ld a, c ; x
+    add a, 8
+    ld [hli], a ; x
+    ld a, $6e
+    ld [hli], a ; tile
+    ld a, OAMF_XFLIP
+    ld [hli], a  ; attributes
+; Step 2. Draw the tail
+    ld a, c ; x
+    add a, 4
+    ld c, a ; x
+; draw the segments
+    ldh a, [hDrawHoldLength]
+    .wholeSegmentsLoop:
+    ld e, a ; remaining length
+    cp 16
+    jr c, .partialSegment
+    ld a, b ; y
+    sub a, 16
+    ld b, a
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, $8e
+    ld [hli], a ; tile
+    ld a, 0
+    ld [hli], a  ; attributes
+    ld a, e
+    sub 16
+    jr z, .tailDone
+    jr .wholeSegmentsLoop
+    .partialSegment:
+    ld a, b ; y
+    sub a, e ; remaining length
+    ld [hli], a ; y
+    ld a, c ; x
+    ld [hli], a ; x
+    ld a, e ; remaining length
+    sla a
+    add a, $6e
+    ld [hli], a ; tile
+    ld a, 0
+    ld [hli], a  ; attributes
+    .tailDone:
     call EndDrawSprites
-    pop hl ; Object_PosY_Frac
+    pop hl ; Object_State
     ret
 
 ; HL = pointer to Target_PosY_Frac
@@ -2888,12 +4384,10 @@ DrawExplodedTarget:
     sla a
     sla a
     sla a
+    ld c, a ; lane * 8
     sla a ; lane * 16 (0, 16, 32, 48)
-    bit 5, a ; is it lane 2 or 3 (B or A)?
-    jr z, .10
-    add 16 ; middle gap
-    .10:
-    add a, 40 ; left offset
+    add a, c ; lane * 24
+    add a, 20 ; left offset
     ld c, a ; x
     ; left half
     ld a, b ; y
@@ -2903,7 +4397,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $86 ; exploded tile base
+    add a, $90 ; exploded tile base
     push af
     ld [hli], a ; tile
     ld a, 0
@@ -2932,16 +4426,20 @@ CheckForErrors:
     and a, b
     ldh [hErrorLanes], a
     ret z ; exit if no errors
-    ; TODO
-;    jsr deal_error_pain
-;    jsr inc_error_count
-;    jsr reset_points_level
-;    jsr reset_streak
-;    jsr dec_vu_level
-    ret
+    .misPressesLoop:
+    srl a
+    jr nc, .10
+    ; mis-press in this lane
+    push af
+    call IncMisPressCount
+    call DealMisPressDamage
+    pop af
+    .10:
+    jr nz, .misPressesLoop
+    jp ResetCurrentStreak
 
 ; ProcessActiveTargets() helper function.
-; Explodes active targets that were hit and moves them to the hit list.
+; Moves active targets that were hit either to the hit list (duration=1) or held list (duration>1).
 SweepActiveTargets:
     ld a, ZILCH_ITEM
     ldh [hPrev], a
@@ -2953,8 +4451,7 @@ SweepActiveTargets:
     or a
     ret z ; exit if no more hits to process
 
-    ld a, [hli] ; Target_Next
-    ld b, a
+    inc l ; Target_State
     ld a, [hl] ; Target_State
     ; compute bit mask for lane in C
     ld c, 1
@@ -2969,10 +4466,10 @@ SweepActiveTargets:
     ldh a, [hHitLanes]
     and a, c ; is this lane hit?
     jr nz, .hitTarget
+    dec l ; Target_Next
     ld a, l
-    dec a ; Target_Next
     ldh [hPrev], a
-    ld l, b ; Target_Next
+    ld l, [hl] ; Target_Next
     jr .loop
 
     .hitTarget:
@@ -2983,27 +4480,59 @@ SweepActiveTargets:
     and a, c ; mask off this lane
     ldh [hHitLanes], a
 
-;   TODO: jsr on_normal_target_hit
     ; turn on the sound channels
     ldh a, [hSoundStatus]
     and ~3
     ldh [hSoundStatus], a
+    ; set trigger flag (bit 7 of Track_PeriodIndex) for square wave channels
+    push hl
+    ld hl, wTracks + Track_PeriodIndex
+    set 7, [hl]
+    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF
+    set 7, [hl]
+    pop hl
 
     inc l ; Target_PosY_Frac
     inc l ; Target_PosY_Int
-    ld a, 143 ; lock to grid
+    ld a, HIT_START_Y + (HIT_EXTENT / 2); lock to grid
     ld [hl-], a ; Target_PosY_Int
     dec l ; Target_State
-    dec l ; Target_Next
+    ld a, [hl-] ; Target_State
+    and a, $fc ; extended duration?
+    jr nz, .isHeldTarget
+    ; it's a tap target
+    call IncTapHitCount
+    call RecoverHealth
+    call IncCurrentStreak
     call MoveActiveTargetToHitList
-    ld l, b ; Target_Next
+    ld l, a ; Target_Next
+    jr .loop
+
+    .isHeldTarget:
+; map duration to hold timer
+    srl a
+    srl a
+    dec a
+    or a, LOW(wHoldTimerTable)
+    ld e, a
+    ld d, HIGH(wHoldTimerTable)
+    ld a, [de] ; timer
+    inc l ; Target_State
+    inc l ; Target_HoldTimer
+    ld [hl-], a ; Target_HoldTimer
+    dec l ; Target_Next
+
+    call IncHoldHeadHitCount
+    call MoveActiveTargetToHeldList
+    ld l, a ; Target_Next
     jr .loop
 
 ; HL = pointer to Target_Next
-; B = Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
 MoveActiveTargetToHitList:
-    ld a, ZILCH_ITEM
-    ld [hl], a ; Target_Next
+    ld b, [hl] ; old Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next (end of list)
     ldh a, [hHitTargetsTail]
     ld c, a ; save old tail
     ld a, l
@@ -3028,14 +4557,236 @@ MoveActiveTargetToHitList:
     .30:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .40
-    ld a, b ; Target_Next
+    ld a, b ; old Target_Next
     ldh [hActiveTargetsHead], a ; yes. Next becomes new head
     ret
     .40:
     ld l, a
-    ld a, b ; Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveActiveTargetToMissedList:
+    ld b, [hl] ; old Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next (end of list)
+    ldh a, [hMissedTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hMissedTargetsTail], a ; make this the new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hMissedTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hActiveTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveActiveTargetToHeldList:
+    ld b, [hl] ; old Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next
+    ldh a, [hHeldTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hHeldTargetsTail], a ; this target becomes new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hHeldTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hActiveTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hActiveTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hActiveTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveHeldTargetToHitList:
+    ld b, [hl] ; old Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next
+    ldh a, [hHitTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hHitTargetsTail], a ; this target becomes new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hHitTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hHeldTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hHeldTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hHeldTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+; HL = pointer to Target_Next
+; Returns: A = old Target_Next
+; Destroys: BC
+MoveHeldTargetToMissedList:
+    ld b, [hl] ; old Target_Next
+    ld [hl], ZILCH_ITEM ; Target_Next (end of list)
+    ldh a, [hMissedTargetsTail]
+    ld c, a ; save old tail
+    ld a, l
+    ldh [hMissedTargetsTail], a ; make this the new tail
+    ld a, c ; old tail
+    cp ZILCH_ITEM ; starting the list?
+    jr nz, .10
+    ld a, l
+    ldh [hMissedTargetsHead], a ; yes. This target becomes the head
+    jr .20
+    .10:
+    ld a, l ; this target
+    ld l, c ; old tail
+    ld [hl], a ; Target_Next (point old tail to this)
+    ld l, a
+    .20:
+    ldh a, [hHeldTargetsTail]
+    cp a, l ; removing the tail?
+    ldh a, [hPrev]
+    jr nz, .30
+    ldh [hHeldTargetsTail], a ; yes. Previous becomes new tail
+    .30:
+    cp ZILCH_ITEM ; removing the head?
+    jr nz, .40
+    ld a, b ; old Target_Next
+    ldh [hHeldTargetsHead], a ; yes. Next becomes new head
+    ret
+    .40:
+    ld l, a
+    ld a, b ; old Target_Next
+    ld [hl], a ; previous Target_Next = this Target_Next
+    ret
+
+ProcessHeldTargets:
+    ld a, ZILCH_ITEM
+    ldh [hPrev], a
+    ldh a, [hHeldTargetsHead]
+    ld h, HIGH(wTargetsArena)
+    .loop:
+    cp ZILCH_ITEM ; end of list?
+    ret z ; exit if so
+    .foo:
+    ld l, a ; Target_Next
+    inc l ; Target_State
+    ld a, [hli] ; Target_State
+    ; compute bit mask for lane in C
+    ld c, 1
+    and a, 3 ; lane
+    jr z, .10
+    .20:
+    sla c
+    dec a
+    jr nz, .20
+    .10:
+    ldh a, [hLaneInput]
+    and a, c ; is this lane still held?
+    jr nz, .stillHeld
+
+    ; no longer held - move held target to missed list
+    call IncHoldBreakCount
+    call DealHoldBreakDamage
+    call ResetCurrentStreak
+    ; turn off the square wave channels
+    ldh [hSoundStatus], a
+    or a, 3
+    ldh [hSoundStatus], a
+    ; clear timer
+    xor a
+    ld [hl-], a ; Target_HoldTimer
+    dec l ; Target_Next
+    call MoveHeldTargetToMissedList
+    jr .loop
+
+    .stillHeld:
+    ld a, [hl] ; Target_HoldTimer
+    dec a
+    jr z, .timerExpired
+    ; not yet expired
+    ld [hl-], a ; Target_HoldTimer
+    ldh [hDrawHoldLength], a
+    call DrawHoldTarget
+    ld a, l
+    and a, ~3 ; Target_Next
+    ldh [hPrev], a
+    ld l, a
+    ld a, [hl] ; Target_Next
+    jr .loop
+
+    .timerExpired:
+    ; hold complete
+    call IncHoldCompleteCount
+    call RecoverHealth
+    call IncCurrentStreak
+    ld a, l
+    and a, ~3 ; Target_Next
+    ld l, a
+    call MoveHeldTargetToHitList
+    jr .loop
 
 ProcessHitTargets:
     ld a, ZILCH_ITEM
@@ -3044,10 +4795,9 @@ ProcessHitTargets:
     ld h, HIGH(wTargetsArena)
     .loop:
     cp ZILCH_ITEM ; end of list?
-    ret z
-    ld l, a
-    ld a, [hli] ; Target_Next
-    push af ; save Target_Next
+    ret z ; exit if so
+    ld l, a ; Target_Next
+    inc l ; Target_State
     ld a, [hl] ; Target_State
     and a, $3C ; counter bits (5..2)
     cp $3C
@@ -3059,12 +4809,14 @@ ProcessHitTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ldh [hPrev], a
-    pop af ; restore Target_Next
+    ld l, a
+    ld a, [hl] ; Target_Next
     jr .loop
 
     .evaporated:
     ; put on free list
     dec l ; Target_Next
+    ld b, [hl] ; old Target_Next
     ldh a, [hFreeTargetsList] ; old head of free list
     ld [hl], a ; Target_Next
     ld a, l ; this target
@@ -3078,12 +4830,12 @@ ProcessHitTargets:
     .10:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .20
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ldh [hHitTargetsHead], a ; yes. Next becomes new head
     jr .loop
     .20:
     ld l, a ; previous
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     jr .loop
 
@@ -3095,21 +4847,24 @@ ProcessMissedTargets:
     .loop:
     cp ZILCH_ITEM ; end of list?
     ret z ; exit if so
-    ld l, a
-    ld a, [hli] ; Target_Next
-    push af ; save Target_Next
+    ld l, a ; Target_Next
+    inc l ; Target_State
     call MoveTarget
+    inc l ; Target_PosY_Frac
     inc l ; Target_PosY_Int
     ld a, [hl] ; Target_PosY_Int
     cp 160 ; fell off screen?
     jr nc, .fell_off
     ; still visible
     dec l ; Target_PosY_Frac
-    call DrawNormalTarget
+    dec l ; Target_State
+    ; TODO: if it's a hold target, collapse the tail
+    call DrawTapTarget
     ld a, l
     and a, ~3 ; Target_Next
     ldh [hPrev], a
-    pop af ; restore Target_Next
+    ld l, a
+    ld a, [hl] ; Target_Next
     jr .loop
 
     .fell_off:
@@ -3117,6 +4872,7 @@ ProcessMissedTargets:
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
+    ld b, [hl] ; old Target_Next
     ldh a, [hFreeTargetsList] ; old head of free list
     ld [hl], a ; Target_Next
     ld a, l ; this target
@@ -3130,14 +4886,15 @@ ProcessMissedTargets:
     .10:
     cp ZILCH_ITEM ; removing the head?
     jr nz, .20
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ldh [hMissedTargetsHead], a ; yes. Next becomes new head
     jr .loop
     .20:
     ld l, a ; previous
-    pop af ; restore Target_Next
+    ld a, b ; old Target_Next
     ld [hl], a ; previous Target_Next = this Target_Next
     jr .loop
+
 
 Prng:
     ldh a, [hRandom]
@@ -3148,23 +4905,719 @@ Prng:
     ldh [hRandom], a
     ret
 
+; Destroys: A, B
+RandomDecision:
+    ldh a, [hGameBehaviorState0]
+    and GAME_BEHAVIOR_STATE0_MASK__RANDOM_MODE
+    cp GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+    jr nz, .skipStir
+    ldh a, [hRandom]
+    ld b, a
+    ldh a, [rDIV]
+    xor b
+    ld b, a
+    ldh a, [rDIV]
+    rrc a
+    xor a, b
+    ldh [hRandom], a
+    .skipStir:
+    jr Prng
+
+
+MainFunc_SongSelectionInit:
+    xor a
+    ldh [hCurrentSong], a
+
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    ; Clear tilemap
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    call SetMemory
+
+    ld hl, SongSelectionScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+
+    call PrintCurrentSongSelectionIndicator
+
+    ld a, 11
+    ldh [hMainState], a ; song selection
+    jp TurnOnLCD
+
+PrintCurrentSongSelectionIndicator:
+    ld d, $99
+    ldh a, [hCurrentSong]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $01
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentSongIndicator:
+    ld d, $99
+    ldh a, [hCurrentSong]
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    add a, $01
+    ld e, a
+    ld c, 1
+    call BeginVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_SongSelection:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .chooseSong
+    bit PADB_A, a
+    jr nz, .chooseSong
+    bit PADB_SELECT, a
+    jr nz, .nextSong
+    bit PADB_DOWN, a
+    jr nz, .nextSong
+    bit PADB_UP, a
+    jr nz, .previousSong
+    ret z
+
+    .chooseSong:
+    ld a, 1 ; playtest settings init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .previousSong:
+    call EraseCurrentSongIndicator
+    ldh a, [hCurrentSong]
+    or a
+    jr nz, .noWrapToLastSong
+    ld a, SONG_COUNT
+    .noWrapToLastSong:
+    dec a
+    ldh [hCurrentSong], a
+    jp PrintCurrentSongSelectionIndicator
+
+    .nextSong:
+    call EraseCurrentSongIndicator
+    ldh a, [hCurrentSong]
+    inc a
+    cp SONG_COUNT
+    jr c, .noWrapToFirstSong
+    xor a
+    .noWrapToFirstSong:
+    ldh [hCurrentSong], a
+    jp PrintCurrentSongSelectionIndicator
+
+
+MainFunc_SongSessionResultsInit:
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    ; Clear tilemap
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    call SetMemory
+
+    ld hl, SongSessionResultsScreenTilemap
+    call WriteVramStrings
+
+    call ComputeSongSessionAccuracy
+    call PrintSongSessionResults
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+
+    ld a, 9
+    ldh [hMainState], a ; song session results
+    jp TurnOnLCD
+
+MainFunc_SongSessionResults:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    ret z ; start not pressed
+    ; start pressed
+    ld a, 10
+    ldh [hMainState], a ; song selection init
+    jp TurnOffLCD
+
+; Returns: DE = hit_notes (tap_hit_count + hold_complete_count)
+ComputeHitNotes:
+    ldh a, [hTapHitCount]
+    ld e, a
+    ldh a, [hHoldCompleteCount]
+    add a, e
+    ld e, a
+    ldh a, [hTapHitCount+1]
+    ld d, a
+    ldh a, [hHoldCompleteCount+1]
+    adc a, d
+    ld d, a
+    ret
+
+PrintSongSessionHitNotesResult:
+    ld de, $988E
+    ld c, 5
+    call BeginVramString
+    call ComputeHitNotes
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMissesResult:
+    ld de, $98CE
+    ld c, 5
+    call BeginVramString
+    ; misses = tap_miss_count + hold_head_miss_count + hold_break_count
+    ldh a, [hTapMissCount]
+    ld e, a
+    ldh a, [hHoldHeadMissCount]
+    add a, e
+    ld e, a
+    ldh a, [hTapMissCount+1]
+    ld d, a
+    ldh a, [hHoldHeadMissCount+1]
+    adc a, d
+    ld d, a
+    ldh a, [hHoldBreakCount]
+    add a, e
+    ld e, a
+    ldh a, [hHoldBreakCount+1]
+    adc a, d
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMisPressesResult:
+    ld de, $990E
+    ld c, 5
+    call BeginVramString
+    ldh a, [hMisPressCount]
+    ld e, a
+    ldh a, [hMisPressCount+1]
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+PrintSongSessionMaxStreakResult:
+    ld de, $994E
+    ld c, 5
+    call BeginVramString
+    ldh a, [hMaxStreak]
+    ld e, a
+    ldh a, [hMaxStreak+1]
+    ld d, a
+    call PrintU16Dec_DE
+    jp EndVramString
+
+ComputeSongSessionAccuracy:
+    call ComputeHitNotes
+    ld b, d
+    ld c, e
+    ld a, 100
+    call MulU16xU8 ; hit_notes * 100 -> E:HL
+    ld a, l
+    ld [wNum24+0], a
+    ld a, h
+    ld [wNum24+1], a
+    ld a, e
+    ld [wNum24+2], a
+    ldh a, [hSpawnedTargetsCount]
+    ld c, a
+    ldh a, [hSpawnedTargetsCount+1]
+    ld b, a
+    call DivU24ByU16 ; (hit_notes * 100) / spawned_targets_count -> HL
+    ld a, l
+    ldh [hComputedSongSessionAccuracy], a
+    ret
+
+PrintSongSessionAccuracyResult:
+    ld de, $998C
+    ld c, 3
+    call BeginVramString
+    ldh a, [hComputedSongSessionAccuracy]
+    call PrintU8Dec_A
+    jp EndVramString
+
+PrintSongSessionRankResult:
+    ld de, $99EC
+    ld c, 1
+    call BeginVramString
+    ldh a, [hComputedSongSessionAccuracy]
+    cp 98
+    jr nc, .rankS
+    cp 92
+    jr nc, .rankA
+    cp 85
+    jr nc, .rankB
+    cp 75
+    jr nc, .rankC
+    ; rank D
+    ld a, $0E
+    jr .print
+    .rankS:
+    ld a, $1D
+    jr .print
+    .rankA:
+    ld a, $0B
+    jr .print
+    .rankB:
+    ld a, $0C
+    jr .print
+    .rankC:
+    ld a, $0D
+    .print:
+    ld [hli], a
+    jp EndVramString
+
+PrintSongSessionResults:
+    call PrintSongSessionHitNotesResult
+    call PrintSongSessionMissesResult
+    call PrintSongSessionMisPressesResult
+    call PrintSongSessionMaxStreakResult
+    call PrintSongSessionAccuracyResult
+    call PrintSongSessionRankResult
+    jp FlushVramBuffer
+
+
+SECTION "MulScratch", WRAM0
+wMulA:   ds 1
+wMulHi:  ds 1
+wMulCnt: ds 1
+
+SECTION "Multiplication", ROM0
+; ------------------------------------------------------------
+; MulU16xU8
+;   Unsigned multiply: (BC * A) -> DE:HL
+;
+; IN:
+;   BC = multiplicand (u16)
+;   A  = multiplier   (u8)
+;
+; OUT:
+;   E:HL = 24-bit product
+;
+; CLOBBERS:
+;   AF, BC, DE, HL
+; ------------------------------------------------------------
+MulU16xU8:
+    ld [wMulA], a
+
+    xor a
+    ld e, a
+    ld h, a
+    ld l, a
+    ld [wMulHi], a
+
+    ld a, 8
+.loop:
+    ld [wMulCnt], a
+    ; multiplier >>= 1, old bit0 -> carry
+    ld a, [wMulA]
+    srl a
+    ld [wMulA], a
+    jr nc, .skip_add
+
+    add hl, bc
+
+    ; E += wMulHi + carry
+    ld a, [wMulHi]
+    ld d, a
+    ld a, e
+    adc a, d
+    ld e, a
+
+.skip_add:
+    ; multiplicand <<= 1 across (wMulHi:BC)
+    sla c
+    rl  b
+    ld a, [wMulHi]
+    rl  a
+    ld [wMulHi], a
+
+    ; counter--
+    ld a, [wMulCnt]
+    dec a
+    jr nz, .loop
+    ret
+
+
+SECTION "Division scratch", WRAM0
+
+wNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
+wRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
+
+SECTION "Division", ROM0
+
+; ------------------------------------------------------------
+; DivU24ByU16
+;   Unsigned divide: wNum24 / BC
+; IN:
+;   wNum24 = 24-bit numerator (little-endian)
+;   BC     = 16-bit divisor (BC != 0)
+; OUT:
+;   HL     = 16-bit quotient
+;   wRem16 = 16-bit remainder (optional use)
+; CLOBBERS:
+;   AF, BC, DE, HL
+; ------------------------------------------------------------
+DivU24ByU16:
+    xor a
+    ld h, a
+    ld l, a              ; quotient = 0
+
+    ld [wRem16+0], a
+    ld [wRem16+1], a     ; remainder = 0
+
+    ld d, 24
+.loop:
+    ; Shift remainder left by 1
+    ld a, [wRem16+0]
+    sla a
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    rl a
+    ld [wRem16+1], a
+
+    ; Shift numerator left by 1, MSB goes into carry
+    ; (wNum24 <<= 1), carry after last RL is old bit23
+    ld a, [wNum24+0]
+    sla a
+    ld [wNum24+0], a
+    ld a, [wNum24+1]
+    rl  a
+    ld [wNum24+1], a
+    ld a, [wNum24+2]
+    rl  a
+    ld [wNum24+2], a     ; carry now holds old bit23
+
+    ; Bring that carry bit into remainder LSB
+    ld a, [wRem16+0]
+    adc a, 0             ; add carry
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    adc a, 0
+    ld [wRem16+1], a
+
+    ; quotient <<= 1
+    add hl, hl
+
+    ; if remainder >= divisor: remainder -= divisor; quotient |= 1
+    ld a, [wRem16+1]
+    cp b
+    jr c, .no_sub
+    jr nz, .do_sub
+    ld a, [wRem16+0]
+    cp c
+    jr c, .no_sub
+
+.do_sub:
+    ; remainder -= BC
+    ld a, [wRem16+0]
+    sub c
+    ld [wRem16+0], a
+    ld a, [wRem16+1]
+    sbc b
+    ld [wRem16+1], a
+
+    inc l                ; set low bit of quotient
+
+.no_sub:
+    dec d
+    jr nz, .loop
+    ret
+
+
+; ============================================================
+; Decimal printing (GBZ80 / RGBDS)
+; - Output pointer: HL (writes tile IDs, inc HL)
+; - Digits contiguous: '0' = $01 ... '9' = $0A
+; - Space tile: $00
+; ============================================================
+
+DEF DIGIT_TILE_0 EQU $01
+DEF SPACE_TILE   EQU $00
+
+; -------------------------
+; ROM tables (powers of 10)
+; -------------------------
+SECTION "Decimal tables", ROM0
+
+; 10^4 .. 10^0 (16-bit)
+Pow10_16:
+    dw 10000
+    dw 1000
+    dw 100
+    dw 10
+    dw 1
+
+SECTION "Decimal scratch", WRAM0
+
+wPrintedAny: ds 1    ; 0/1
+wDigit:      ds 1    ; current digit 0..9
+
+wU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
+
+; -------------------------
+; Output helpers
+; -------------------------
+SECTION "Decimal print", ROM0
+
+; ============================================================
+; PrintU16Dec_DE
+;   DE = unsigned 16-bit value (0..65535)
+;   HL = output pointer
+; Clobbers: AF,BC,DE,HL
+; ============================================================
+PrintU16Dec_DE:
+    ; Store remainder
+    ld a, e
+    ld [wU16+0], a
+    ld a, d
+    ld [wU16+1], a
+
+    ld de, Pow10_16
+    ld b, 5              ; number of places (10^4..10^0)
+
+    xor a
+    ld [wPrintedAny], a
+
+.u16_place_loop:
+    push hl ; save output pointer
+    ; Load power into H:L (table is little-endian)
+    ld a, [de]           ; lo
+    inc de
+    ld l, a
+    ld a, [de]           ; hi
+    inc de
+    ld h, a              ; HL = power
+
+    push de ; save Pow10_16 pointer
+
+    ; Load current value into D:E
+    ld a, [wU16+0]
+    ld e, a
+    ld a, [wU16+1]
+    ld d, a
+
+    xor a
+
+.u16_sub_loop:
+    ld [wDigit], a
+    ; if (DE < HL) break
+    ld a, d
+    cp h
+    jr c, .u16_digit_done
+    jr nz, .u16_do_sub
+    ld a, e
+    cp l
+    jr c, .u16_digit_done
+
+.u16_do_sub:
+    ; DE -= HL
+    ld a, e
+    sub l
+    ld e, a
+    ld a, d
+    sbc h
+    ld d, a
+
+    ; digit++
+    ld a, [wDigit]
+    inc a
+    jr .u16_sub_loop
+
+.u16_digit_done:
+    ; Store remainder back
+    ld a, e
+    ld [wU16+0], a
+    ld a, d
+    ld [wU16+1], a
+
+    pop de ; restore Pow10_16 pointer
+    pop hl ; restore output pointer
+
+    ; ---- Fixed width: leading SPACES until first non-zero digit,
+    ;      but always print at least one digit on last place.
+    ld a, [wDigit]
+    or a
+    jr nz, .u16_fixed_print_digit
+    ld a, [wPrintedAny]
+    or a
+    jr nz, .u16_fixed_print_digit
+    ld a, b
+    cp 1
+    jr z, .u16_fixed_print_digit
+
+    ; leading space
+    ld a, SPACE_TILE
+    ld [hli], a
+    jr .u16_next_place
+
+.u16_fixed_print_digit:
+    ld a, 1
+    ld [wPrintedAny], a
+    ld a, [wDigit]
+    add a, DIGIT_TILE_0
+    ld [hli], a
+
+.u16_next_place:
+    dec b
+    jr nz, .u16_place_loop
+    ret
+
+
+; ============================================================
+; PrintU8Dec_A
+;   A  = unsigned value (0..100)
+;   HL = output pointer
+; Prints 3 chars, right-aligned, leading spaces
+;
+; Example:
+;   0   -> "  0"
+;   5   -> "  5"
+;   42  -> " 42"
+;   100 -> "100"
+;
+; Clobbers: AF,BC,D
+; ============================================================
+PrintU8Dec_A:
+    ld b, a          ; B = remainder
+    xor a
+    ld [wPrintedAny], a
+
+    ld c, 100
+    call .PrintDigitU8
+    ld c, 10
+    call .PrintDigitU8
+    ld c, 1
+    ; fall through
+
+; ------------------------------------------------------------
+; .PrintDigitU8
+;   B = remainder
+;   C = place value (100, 10, or 1)
+; ------------------------------------------------------------
+.PrintDigitU8:
+    ld d, 0            ; D = digit = 0
+
+.sub_loop:
+    ld a, b
+    sub c
+    jr c, .done
+    ld b, a
+    inc d           ; digit++
+    jr .sub_loop
+
+.done:
+    ; D = digit
+    ; B = new remainder
+
+    ; decide space vs digit
+    ld a, d
+    or a
+    jr nz, .print_digit
+    ld a, [wPrintedAny]
+    or a
+    jr nz, .print_digit
+    ld a, c
+    bit 0, c
+    jr nz, .print_digit   ; always print last digit
+
+    ; leading space
+    ld a, SPACE_TILE
+    ld [hli], a
+    ret
+
+.print_digit:
+    ld a, 1
+    ld [wPrintedAny], a
+    ld a, d
+    add a, DIGIT_TILE_0
+    ld [hli], a
+    ret
+
+
 SECTION "Tile data", ROM0
 
-TitleScreenTiles:
-db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ; blank tile
-incbin "pushstarttiles.bin"
-TitleScreenTilesEnd:
+PlaytestSettingsScreenTiles:
+incbin "playtestsettingsfont.bin"
+PlaytestSettingsScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
-incbin "buttonsprites.bin"
+incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
+incbin "progressbartiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
 
-TitleScreenTilemap:
-db $99, $05, 10, $01, $02, $03, $04, $00, $03, $05, $06, $07, $05
+SongSelectionScreenTilemap:
+db $98, $83, 12, "CHOOSE SONG:"
+db $99, $03, 7, "WHISKEY"
+db $99, $43, 8, "PARADISE"
+db 0
+
+PlaytestSettingsScreenTilemap:
+db $98, $42, 14, "INTENSITY MAX:"
+db $98, $82, 11, "HOLD NOTES:"
+db $98, $C2, 8,  "  STYLE:"
+db $99, $02, 13, "RANDOM NOTES:"
+db $99, $42, 8,  "  STYLE:"
+;db $99, $82, 14, "MAX CUE NOTES:"
+db $99, $E5, 10, "PUSH START"
+db $9A, $06, 8,  "TO PLAY!"
+db 0
+
+SongSessionResultsScreenTilemap:
+db $98, $26, 7, "RESULTS"
+db $98, $82, 9, "HIT NOTES"
+db $98, $C2, 6, "MISSES"
+db $99, $02, 11, "MIS-PRESSES"
+db $99, $42, 10, "MAX STREAK"
+db $99, $82, 8, "ACCURACY"
+db $99, $8F, 1, "%"
+db $99, $E6, 4, "RANK"
 db 0
 
 GameScreenTilemap:
@@ -3173,20 +5626,17 @@ db 0
 
 SECTION "Hit cue streams", ROM0
 
-SongHitCueStream:
-db $0C,$2C,$58,$B1,$A1,$85,$8B,$16,$34,$30,$B1,$62,$C6,$86,$16,$2C
-db $58,$D1,$83,$47,$02,$16,$30,$68,$E0,$42,$C6,$0D,$16,$34,$10,$B1
-db $83,$47,$04,$18,$30,$78,$B1,$83,$07,$8B,$18,$30,$78,$B1,$83,$45
-db $8E,$04,$18,$58,$B1,$63,$43,$0B,$16,$2C,$68,$61,$62,$C5,$8D,$0C
-db $2C,$58,$B1,$A3,$06,$8E,$04,$2C,$60,$D1,$C0,$85,$8C,$1A,$2C,$68
-db $21,$63,$06,$8E,$08,$30,$60,$F1,$63,$06,$0F,$16,$30,$60,$F1,$63
-db $06,$8B,$1C,$08,$68,$C1,$C1,$01,$8B,$18,$2C,$58,$D0,$40,$C5,$8C
-db $16,$2C,$60,$B0,$43,$06,$0E,$08,$2C,$58,$B1,$62,$C5,$8B,$16,$2C
-db $58,$B1,$62,$C5,$8B,$16,$2C,$58,$B1,$62,$C5,$8B,$16,$2C,$58,$B1
-db $62,$C5,$8B,$16,$34,$60,$E0,$80,$C5,$8C,$16,$2C,$68,$20,$62,$C6
-db $0B,$16,$30,$58,$21,$83,$07,$04,$04,$30,$60,$C1,$62,$3C
+include "whiskeycues.inc"
+include "paradisecues.inc"
 
 SECTION "Song data", ROM0
 
-INCLUDE "song.s"
+INCLUDE "whiskeysong.s"
+INCLUDE "paradisesong.s"
 INCLUDE "silentsong.s"
+
+SECTION "Song descriptors", ROM0
+
+SongDescriptors:
+dw whiskey_cues, whiskey_song
+dw paradise_cues, paradise_song

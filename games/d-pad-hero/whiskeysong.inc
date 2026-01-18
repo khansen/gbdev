@@ -1,309 +1,297 @@
-; Generated from song.xm by xm2gb 5.0.0
-song_chn0_ptn0:
+; Generated from whiskey.xm by xm2gb 5.0.0
+whiskey_chn0_ptn0:
 db $40,$01,$B1,$27,$1D,$E4,$62,$F3,$D8,$F3,$D4,$F3,$E0,$27,$9C,$D8
 db $F3,$D4,$F3,$27,$D4,$F3,$19,$29,$D4,$F3,$27,$9D,$E4,$62,$F3,$D8
 db $F3,$D4,$F3,$E3,$10,$24,$E0,$F3,$10,$E4,$61,$F3,$97,$DC,$F3,$D8
 db $F3,$D4,$F3,$E0,$20,$D4,$F3,$99,$24,$D4,$F3,$27,$D4,$F3
-song_chn0_ptn1:
+whiskey_chn0_ptn1:
 db $40,$03,$B1,$27,$E3,$05,$29,$1D,$E4,$62,$F3,$D8,$F3,$D4,$F3,$E0
 db $29,$9C,$D8,$F3,$D4,$F3,$29,$D4,$F3,$19,$2B,$D4,$F3,$29,$1D,$E4
 db $62,$F3,$D8,$F3,$D4,$F3,$E3,$10,$24,$12,$E0,$F3,$E4,$61,$F3,$97
 db $DC,$F3,$D8,$F3,$D4,$F3,$E0,$20,$D4,$F3,$99,$24,$D4,$F3,$27,$D4
 db $F3
-song_chn0_ptn2:
+whiskey_chn0_ptn2:
 db $40,$C3,$B1,$27,$E3,$05,$29,$D8,$E0,$F3,$D4,$F3,$19,$29,$D4,$F3
 db $29,$1C,$D8,$F3,$D4,$F3,$2B,$1D,$E4,$62,$F3,$D8,$F3,$D3,$F3,$E3
 db $02,$2C,$1C,$D8,$E0,$F3,$D4,$F3,$2C,$10,$E4,$62,$F3,$00,$97,$DC
 db $F3,$D8,$F3,$D4,$F3,$E0,$2B,$D4,$F3
-song_chn0_ptn3:
+whiskey_chn0_ptn3:
 db $40,$C1,$B1,$27,$D8,$F3,$D4,$F3,$19,$27,$D4,$F3,$E3,$10,$2C,$1D
 db $E4,$62,$F3,$D8,$F3,$D4,$F3,$E0,$2B,$1D,$E4,$62,$F3,$D8,$F3,$D4
 db $F3,$E0,$27,$1C,$D8,$F3,$D4,$F3,$E3,$10,$24,$11,$E0,$F3,$E4,$61
 db $F3,$00,$97,$DC,$F3,$D8,$F3,$D4,$F3,$E0,$20,$D8,$F3
-song_chn0_ptn4:
+whiskey_chn0_ptn4:
 db $40,$01,$B1,$27,$1D,$E4,$62,$F3,$D8,$F3,$D4,$F3,$E0,$27,$9C,$D8
 db $F3,$D4,$F3,$27,$D4,$F3,$19,$29,$D4,$F3,$27,$1D,$E4,$62,$F3,$D8
 db $F3,$D4,$F3,$E3,$10,$24,$11,$E0,$F3,$E4,$61,$F3,$97,$DC,$F3,$D8
 db $F3,$D4,$F3,$E0,$20,$D4,$F3,$99,$24,$D4,$F3,$27,$D4,$F3
-song_chn0_ptn5:
+whiskey_chn0_ptn5:
 db $40,$C1,$B1,$27,$D8,$F3,$D4,$F3,$19,$27,$D4,$F3,$E3,$10,$2C,$1D
 db $E4,$63,$F3,$D8,$F3,$D4,$F3,$E0,$2B,$1D,$E4,$63,$F3,$D8,$F3,$D4
 db $F3,$E0,$27,$1C,$D8,$F3,$D4,$F3,$E3,$10,$24,$11,$E0,$F3,$E4,$61
 db $F3,$00,$97,$DC,$F3,$D8,$F3,$D4,$F3,$E0,$B0,$20,$D8,$F3
-song_chn0_ptn6:
+whiskey_chn0_ptn6:
 db $40,$01,$D0,$F3,$00,$00,$59,$B2,$24,$D8,$F3,$E6,$05,$26,$27,$B9
 db $E0,$29,$D8,$F3,$E3,$F0,$26,$E0,$F3,$D8,$F3,$B9,$27,$D8,$F3,$E3
 db $F0,$24,$E0,$F3,$D8,$F3,$19,$26,$D8,$F3,$E3,$08,$29,$10,$E4,$63
 db $F3
-song_chn0_ptn7:
+whiskey_chn0_ptn7:
 db $40,$01,$E4,$63,$F3,$40,$DE,$F3,$55,$DC,$F3,$DA,$F3,$D8,$F3,$D6
 db $F3,$59,$E0,$B2,$24,$D8,$F3,$E6,$05,$26,$27,$BB,$E3,$F0,$29,$E0
 db $F3,$D8,$F3,$E3,$F0,$26,$E0,$F3,$D8,$F3,$B9,$27,$D8,$F3,$E3,$F0
 db $24,$E0,$F3,$D8,$F3,$19,$26,$D8,$F3,$E3,$08,$29,$10,$E4,$63,$F3
-song_chn0_ptn8:
+whiskey_chn0_ptn8:
 db $40,$01,$E4,$63,$F3,$40,$DE,$F3,$55,$DC,$F3,$DA,$F3,$D8,$F3,$D6
 db $F3,$59,$E0,$B2,$24,$D8,$F3,$E6,$05,$26,$27,$BB,$E3,$F0,$29,$E0
 db $F3,$D8,$F3,$E3,$F0,$26,$E0,$F3,$D8,$F3,$B9,$27,$D8,$F3,$E3,$F0
 db $24,$E0,$F3,$D8,$F3,$59,$E3,$20,$26,$D8,$E0,$F3,$D0,$F3,$D6,$27
 db $32,$D3,$F3,$D6,$E3,$F0,$20,$E0,$F3
-song_chn0_ptn9:
+whiskey_chn0_ptn9:
 db $40,$D1,$B0,$22,$E4,$52,$F3,$D8,$F3,$D4,$F3,$99,$E0,$22,$D8,$F3
 db $20,$D8,$F3,$99,$E3,$06,$22,$D8,$E0,$F3,$22,$D8,$F3,$19,$20,$D8
 db $F3,$E3,$03,$22,$10,$E4,$53,$F3,$00,$11,$DE,$F3,$DC,$F3,$11,$DA
 db $F3,$D8,$F3
-song_chn0_ptn10:
+whiskey_chn0_ptn10:
 db $40,$55,$D6,$E4,$53,$F3,$D4,$F3,$D3,$F3,$D2,$F3,$71,$E0,$B0,$29
 db $DC,$F3,$D8,$F3,$D4,$F3,$E3,$27,$E3,$04,$29,$E4,$53,$F3,$D8,$F3
 db $D4,$F3,$99,$E0,$27,$D8,$F3,$E3,$10,$29,$E0,$F3,$1D,$E4,$53,$F3
 db $D8,$F3,$D4,$F3,$E0,$2B,$17,$DC,$F3,$D8,$F3,$D4,$F3,$E3,$01,$2C
 db $10,$E4,$53,$F3,$11,$DE,$F3,$DC,$F3
-song_chn0_ptn11:
+whiskey_chn0_ptn11:
 db $40,$11,$DA,$E4,$53,$F3,$D8,$F3,$71,$E0,$B0,$29,$DC,$F3,$D8,$F3
 db $D4,$F3,$E3,$27,$E3,$04,$29,$E4,$53,$F3,$D8,$F3,$D4,$F3,$99,$E0
 db $27,$D8,$F3,$E3,$10,$29,$E0,$F3,$17,$DC,$F3,$D8,$F3,$D4,$F3,$27
 db $1D,$E4,$53,$F3,$D8,$F3,$D4,$F3,$E3,$02,$29,$F0,$E4,$53,$F3,$DC
 db $F3,$D8,$F3,$D4,$F3,$41,$E0,$27,$DC,$F3
-song_chn0_ptn12:
+whiskey_chn0_ptn12:
 db $40,$35,$D8,$F3,$D4,$F3,$B0,$27,$E3,$04,$29,$97,$DC,$F3,$D8,$E0
 db $F3,$D4,$F3,$27,$D8,$F3,$D3,$E3,$F0,$24,$E0,$F3,$E4,$51,$F3,$D8
 db $F3,$D4,$F3,$19,$E0,$22,$D8,$F3,$20,$10,$E4,$53,$F3,$00,$55,$DE
 db $F3,$DC,$F3,$DA,$F3,$D8,$F3,$55,$D6,$F3,$D4,$F3,$D3,$F3,$D2,$F3
-song_chn0_ptn13:
+whiskey_chn0_ptn13:
 db $40,$C1,$B1,$27,$D8,$F3,$D4,$F3,$19,$27,$D4,$F3,$E3,$10,$2C,$1D
 db $E4,$62,$F3,$D8,$F3,$D4,$F3,$E0,$2B,$1D,$E4,$62,$F3,$D8,$F3,$D4
 db $F3,$E0,$27,$9C,$D8,$F3,$D4,$F3,$E3,$10,$24,$E0,$F3,$10,$E4,$61
 db $F3,$00,$97,$DC,$F3,$D8,$F3,$D4,$F3,$E0,$20,$D8,$F3
-song_chn0_ptn14:
+whiskey_chn0_ptn14:
 db $88,$35,$D8,$F3,$D4,$F3,$B0,$27,$E3,$04,$29,$97,$DC,$F3,$D8,$E0
 db $F3,$D4,$F3,$27,$D8,$F3,$D3,$E3,$F0,$24,$E0,$F3,$E4,$51,$F3,$D8
 db $F3,$D4,$F3,$19,$E0,$22,$D8,$F3,$E3,$40,$2C,$71,$E0,$F3,$DC,$E4
 db $53,$F3,$D8,$F3,$D4,$F3,$11,$E6,$03,$2C,$2C,$01,$DE,$2C,$00,$00
 db $01,$E0,$F3,$00,$00,$00,$00,$00,$00,$00
-song_chn0_ptn15:
-db $30,$01,$D0,$F3,$00,$00,$00,$00,$00
-song_chn1_ptn0:
+whiskey_chn1_ptn0:
 db $40,$75,$DA,$E4,$63,$F3,$D8,$F3,$D6,$F3,$D4,$F3,$D7,$E0,$B1,$27
 db $40,$E4,$62,$F3,$07,$D4,$F3,$D3,$F3,$D7,$E0,$27,$67,$D4,$F3,$D3
 db $F3,$D7,$27,$D3,$F3,$D7,$29,$46,$D3,$F3,$D7,$27,$E4,$62,$F3,$27
 db $D4,$F3,$D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$C4,$E4,$61,$F3,$D5,$F3
 db $D4,$F3,$65,$D3,$F3,$D7,$E0,$20,$D3,$F3,$D7,$24
-song_chn1_ptn1:
+whiskey_chn1_ptn1:
 db $40,$E6,$D3,$F3,$D7,$B1,$27,$D3,$F3,$D7,$27,$D7,$E3,$05,$29,$40
 db $E4,$62,$F3,$07,$D4,$F3,$D3,$F3,$D7,$E0,$29,$67,$D4,$F3,$D3,$F3
 db $D7,$29,$D3,$F3,$D6,$2B,$46,$D3,$F3,$D7,$29,$E4,$62,$F3,$87,$D4
 db $F3,$D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$C1,$E4,$61,$F3,$DC,$F3,$D8
 db $F3,$65,$D4,$F3,$D7,$E0,$20,$D3,$F3,$D7,$24
-song_chn1_ptn2:
+whiskey_chn1_ptn2:
 db $40,$E6,$D3,$F3,$D7,$B1,$27,$D3,$F3,$D7,$27,$D7,$E3,$05,$29,$70
 db $D4,$E0,$F3,$D3,$F3,$D7,$29,$06,$D3,$F3,$D7,$29,$47,$D4,$F3,$D3
 db $F3,$D7,$2B,$E4,$62,$F3,$07,$D4,$F3,$D2,$F3,$D7,$E3,$02,$2C,$07
 db $D4,$E0,$F3,$D3,$F3,$D7,$2C,$04,$E4,$62,$F3,$C0,$D5,$F3,$D4,$F3
-song_chn1_ptn3:
+whiskey_chn1_ptn3:
 db $40,$65,$D3,$E4,$62,$F3,$D7,$E0,$B1,$2B,$D3,$F3,$D7,$27,$70,$D4
 db $F3,$D3,$F3,$D7,$27,$46,$D3,$F3,$D7,$E3,$10,$2C,$E4,$62,$F3,$47
 db $D4,$F3,$D3,$F3,$D7,$E0,$2B,$E4,$62,$F3,$07,$D4,$F3,$D3,$F3,$D7
 db $E0,$27,$47,$D4,$F3,$D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$04,$E4,$61
 db $F3,$C0,$D5,$F3,$D4,$F3
-song_chn1_ptn4:
+whiskey_chn1_ptn4:
 db $40,$65,$D3,$E4,$63,$F3,$D7,$E0,$B1,$20,$D4,$F3,$D7,$27,$40,$E4
 db $62,$F3,$07,$D4,$F3,$D3,$F3,$D7,$E0,$27,$67,$D4,$F3,$D3,$F3,$D7
 db $27,$D3,$F3,$D7,$29,$46,$D3,$F3,$D7,$27,$E4,$62,$F3,$47,$D4,$F3
 db $D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$C4,$E4,$61,$F3,$D5,$F3,$D4,$F3
 db $65,$D3,$F3,$D7,$E0,$20,$D3,$F3,$D7,$24
-song_chn1_ptn5:
+whiskey_chn1_ptn5:
 db $40,$01,$D0,$F3,$00,$00,$40,$D6,$B2,$24,$56,$D3,$F3,$D6,$E6,$02
 db $26,$D6,$27,$D6,$E0,$29,$6E,$D3,$F3,$D6,$E3,$F0,$26,$E0,$F3,$D3
 db $F3,$D6,$27,$6E,$D3,$F3,$D6,$E3,$F0,$24,$E0,$F3,$D3,$F3,$D6,$26
 db $06,$D3,$F3,$D6,$E3,$08,$29
-song_chn1_ptn6:
+whiskey_chn1_ptn6:
 db $40,$04,$E4,$63,$F3,$00,$10,$D5,$F3,$51,$D4,$F3,$D3,$F3,$D6,$E0
 db $B2,$24,$D6,$D3,$F3,$D6,$E6,$02,$26,$D6,$27,$D6,$E3,$F0,$29,$E0
 db $F3,$6E,$D3,$F3,$D6,$E3,$F0,$26,$E0,$F3,$D3,$F3,$D6,$27,$6E,$D3
 db $F3,$D6,$E3,$F0,$24,$E0,$F3,$D3,$F3,$D6,$26,$06,$D3,$F3,$D6,$E3
 db $08,$29
-song_chn1_ptn7:
+whiskey_chn1_ptn7:
 db $40,$04,$E4,$63,$F3,$00,$10,$D5,$F3,$51,$D4,$F3,$D3,$F3,$D6,$E0
 db $B2,$24,$D6,$D3,$F3,$D6,$E6,$05,$26,$D6,$27,$D6,$E3,$F0,$29,$E0
 db $F3,$6E,$D3,$F3,$D6,$E3,$F0,$26,$E0,$F3,$D3,$F3,$D6,$27,$1E,$D3
 db $F3,$D6,$E3,$F0,$24,$E0,$F3,$20,$50,$DE,$E4,$63,$F3,$DC,$F3
-song_chn1_ptn8:
+whiskey_chn1_ptn8:
 db $40,$65,$D0,$F3,$D6,$B0,$20,$D4,$F3,$D6,$22,$74,$E4,$52,$F3,$D4
 db $F3,$D3,$F3,$D6,$E0,$22,$66,$D4,$F3,$D6,$20,$D4,$F3,$D6,$E3,$06
 db $22,$66,$D4,$E0,$F3,$D6,$22,$D4,$F3,$D6,$20,$06,$D4,$F3,$D6,$E3
 db $03,$22,$04,$E4,$53,$F3,$00,$04,$D5,$F3
-song_chn1_ptn9:
+whiskey_chn1_ptn9:
 db $40,$45,$E4,$53,$F3,$D4,$F3,$D3,$F3,$44,$D2,$F3,$D6,$E0,$B0,$29
 db $DC,$D5,$F3,$D4,$F3,$D3,$F3,$D6,$27,$D6,$E3,$04,$29,$78,$E4,$53
 db $F3,$D4,$F3,$D3,$F3,$D6,$E0,$27,$66,$D4,$F3,$D6,$E3,$10,$29,$E0
 db $F3,$E4,$53,$F3,$C7,$D4,$F3,$D3,$F3,$D6,$E0,$2B,$D5,$F3,$D4,$F3
 db $05,$D3,$F3,$D6,$E3,$01,$2C,$04,$E4,$53,$F3
-song_chn1_ptn10:
+whiskey_chn1_ptn10:
 db $40,$45,$E4,$53,$F3,$D5,$F3,$D4,$F3,$44,$D3,$F3,$D6,$E0,$B0,$29
 db $DC,$D5,$F3,$D4,$F3,$D3,$F3,$D6,$27,$D6,$E3,$04,$29,$78,$E4,$53
 db $F3,$D4,$F3,$D3,$F3,$D6,$E0,$27,$E6,$D4,$F3,$D6,$E3,$10,$29,$E0
 db $F3,$D5,$F3,$D4,$F3,$45,$D3,$F3,$D6,$27,$E4,$53,$F3,$07,$D4,$F3
 db $D3,$F3,$D6,$E3,$02,$29,$7C,$E4,$53,$F3,$D5,$F3,$D4,$F3,$D3,$F3
 db $D6,$E0,$27
-song_chn1_ptn11:
+whiskey_chn1_ptn11:
 db $40,$50,$D4,$F3,$D3,$F3,$CC,$D6,$B0,$27,$D6,$E3,$04,$29,$D5,$F3
 db $D4,$E0,$F3,$E5,$D3,$F3,$D6,$27,$D4,$F3,$D6,$E3,$F0,$24,$E0,$F3
 db $74,$E4,$51,$F3,$D4,$F3,$D3,$F3,$D6,$E0,$22,$06,$D4,$F3,$D6,$20
 db $04,$E4,$53,$F3,$40,$D5,$F3,$44,$D4,$F3,$D3,$F3
-song_chn1_ptn12:
+whiskey_chn1_ptn12:
 db $40,$75,$DA,$E4,$63,$F3,$D8,$F3,$D6,$F3,$D4,$F3,$D7,$E0,$B1,$27
 db $40,$E4,$62,$F3,$07,$D4,$F3,$D3,$F3,$D7,$E0,$27,$67,$D4,$F3,$D3
 db $F3,$D7,$27,$D3,$F3,$D7,$29,$46,$D3,$F3,$D7,$27,$E4,$62,$F3,$47
 db $D4,$F3,$D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$C4,$E4,$61,$F3,$D5,$F3
 db $D4,$F3,$65,$D3,$F3,$D7,$E0,$20,$D3,$F3,$D7,$24
-song_chn1_ptn13:
+whiskey_chn1_ptn13:
 db $40,$65,$D3,$E4,$62,$F3,$D7,$E0,$B1,$2B,$D3,$F3,$D7,$27,$70,$D4
 db $F3,$D3,$F3,$D7,$27,$46,$D3,$F3,$D7,$E3,$10,$2C,$E4,$62,$F3,$47
 db $D4,$F3,$D3,$F3,$D7,$E0,$2B,$E4,$62,$F3,$07,$D4,$F3,$D3,$F3,$D7
 db $E0,$27,$27,$D4,$F3,$D3,$F3,$D7,$E3,$10,$24,$E0,$F3,$04,$E4,$61
 db $F3,$C0,$D5,$F3,$D4,$F3
-song_chn1_ptn14:
+whiskey_chn1_ptn14:
 db $88,$50,$D4,$F3,$D3,$F3,$CC,$D6,$B0,$27,$D6,$E3,$04,$29,$D5,$F3
 db $D4,$E0,$F3,$E5,$D3,$F3,$D6,$27,$D4,$F3,$D6,$E3,$F0,$24,$E0,$F3
 db $74,$E4,$51,$F3,$D4,$F3,$D3,$F3,$D6,$E0,$22,$46,$D4,$F3,$D6,$E3
 db $40,$2C,$E0,$F3,$11,$E6,$03,$18,$18,$01,$18,$00,$00,$01,$E0,$F3
 db $00,$00,$00,$00,$00,$00,$00
-song_chn1_ptn15:
-db $30,$01,$D0,$F3,$00,$00,$00,$00,$00
-song_chn2_ptn0:
+whiskey_chn2_ptn0:
 db $40,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14
 db $B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51
 db $B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14
 db $14
-song_chn2_ptn1:
+whiskey_chn2_ptn1:
 db $40,$51,$B8,$11,$B9,$11,$11,$51,$B8,$11,$B9,$11,$11,$51,$B8,$11
 db $B9,$11,$11,$51,$B8,$11,$B9,$11,$11,$51,$B8,$11,$B9,$11,$11,$51
 db $B8,$11,$B9,$11,$11,$51,$B8,$11,$B9,$11,$11,$51,$B8,$11,$B9,$11
 db $11
-song_chn2_ptn2:
+whiskey_chn2_ptn2:
 db $40,$51,$B8,$19,$B9,$19,$19,$51,$B8,$19,$B9,$19,$19,$51,$B8,$19
 db $B9,$19,$19,$51,$B8,$19,$B9,$19,$19,$51,$B8,$19,$B9,$19,$19,$51
 db $B8,$19,$B9,$19,$19,$51,$B8,$19,$B9,$19,$19,$51,$B8,$19,$B9,$19
 db $19
-song_chn2_ptn3:
+whiskey_chn2_ptn3:
 db $40,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$11,$B8,$14
 db $1B,$11,$18,$18,$50,$B9,$14,$14,$51,$B8,$18,$B9,$14,$14,$51,$B8
 db $20,$B9,$14,$14,$11,$B8,$18,$14
-song_chn2_ptn4:
+whiskey_chn2_ptn4:
 db $40,$51,$B8,$11,$B9,$11,$11,$51,$B8,$11,$B9,$11,$11,$11,$B8,$11
 db $18,$11,$14,$1D,$50,$B9,$11,$11,$51,$B8,$14,$B9,$11,$11,$51,$B8
 db $1D,$B9,$11,$11,$11,$B8,$14,$11
-song_chn2_ptn5:
+whiskey_chn2_ptn5:
 db $40,$51,$B8,$19,$B9,$19,$19,$51,$B8,$19,$B9,$19,$19,$11,$B8,$19
 db $20,$11,$1D,$25,$50,$B9,$19,$19,$51,$B8,$1D,$B9,$19,$19,$51,$B8
 db $25,$B9,$19,$19,$11,$B8,$1D,$19
-song_chn2_ptn6:
+whiskey_chn2_ptn6:
 db $40,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$11,$B8,$14
 db $1B,$11,$18,$20,$50,$B9,$14,$14,$51,$B8,$18,$B9,$14,$14,$51,$B8
 db $20,$B9,$14,$14,$11,$B8,$18,$14
-song_chn2_ptn7:
+whiskey_chn2_ptn7:
 db $40,$51,$B8,$1B,$B9,$1B,$1B,$51,$B8,$1B,$B9,$1B,$1B,$51,$B8,$1B
 db $B9,$1B,$1B,$51,$B8,$1B,$B9,$1B,$1B,$51,$B8,$1B,$B9,$1B,$1B,$51
 db $B8,$1B,$B9,$1B,$1B,$51,$B8,$1B,$B9,$1B,$1B,$51,$B8,$1B,$B9,$1B
 db $1B
-song_chn2_ptn8:
+whiskey_chn2_ptn8:
 db $40,$11,$B8,$14,$1B,$11,$18,$1B,$11,$14,$1B,$11,$18,$1B,$11,$14
 db $1B,$11,$18,$1B,$11,$14,$1B,$11,$18,$1B
-song_chn2_ptn9:
+whiskey_chn2_ptn9:
 db $40,$11,$B8,$14,$1D,$11,$18,$1D,$11,$14,$1D,$11,$18,$1D,$11,$14
 db $1D,$11,$18,$1D,$11,$14,$1D,$11,$18,$1D
-song_chn2_ptn10:
+whiskey_chn2_ptn10:
 db $40,$11,$B8,$19,$20,$11,$1D,$20,$11,$19,$20,$11,$1D,$20,$11,$19
 db $20,$11,$1D,$20,$11,$19,$20,$11,$1D,$20
-song_chn2_ptn11:
+whiskey_chn2_ptn11:
 db $88,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14
 db $B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$51,$B8,$14,$B9,$14,$14,$11
 db $B8,$14,$14,$01,$14,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-song_chn2_ptn12:
-db $30,$01,$D0,$F3,$00,$00,$00,$00,$00
-song_chn3_ptn0:
+whiskey_chn3_ptn0:
 db $40,$51,$B4,$1E,$1E,$1E,$51,$B6,$11,$B4,$1E,$1E,$51,$1E,$1E,$1E
 db $51,$B6,$11,$B4,$1E,$1E,$51,$1E,$1E,$1E,$51,$B6,$11,$B4,$1E,$1E
 db $51,$1E,$1E,$1E,$51,$B6,$11,$B4,$1E,$1E
-song_chn3_ptn1:
+whiskey_chn3_ptn1:
 db $40,$11,$B4,$1E,$B7,$2E,$11,$B4,$1E,$B7,$2E,$11,$B4,$1E,$B7,$2E
 db $11,$B4,$1E,$B7,$2E,$11,$B4,$1E,$B7,$2E,$11,$B4,$1E,$B7,$2E,$11
 db $B4,$1E,$B7,$2E,$11,$B4,$1E,$B7,$2E
-song_chn3_ptn2:
+whiskey_chn3_ptn2:
 db $88,$51,$B4,$1E,$1E,$1E,$51,$B6,$11,$B4,$1E,$1E,$51,$1E,$1E,$1E
 db $51,$B6,$11,$B4,$1E,$1E,$51,$1E,$1E,$1E,$11,$B6,$11,$11,$01,$11
 db $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-song_chn3_ptn3:
-db $30,$01,$D0,$F3,$00,$00,$00,$00,$00
-song_pattern_table:
-dw song_chn0_ptn0
-dw song_chn0_ptn1
-dw song_chn0_ptn2
-dw song_chn0_ptn3
-dw song_chn0_ptn4
-dw song_chn0_ptn5
-dw song_chn0_ptn6
-dw song_chn0_ptn7
-dw song_chn0_ptn8
-dw song_chn0_ptn9
-dw song_chn0_ptn10
-dw song_chn0_ptn11
-dw song_chn0_ptn12
-dw song_chn0_ptn13
-dw song_chn0_ptn14
-dw song_chn0_ptn15
-dw song_chn1_ptn0
-dw song_chn1_ptn1
-dw song_chn1_ptn2
-dw song_chn1_ptn3
-dw song_chn1_ptn4
-dw song_chn1_ptn5
-dw song_chn1_ptn6
-dw song_chn1_ptn7
-dw song_chn1_ptn8
-dw song_chn1_ptn9
-dw song_chn1_ptn10
-dw song_chn1_ptn11
-dw song_chn1_ptn12
-dw song_chn1_ptn13
-dw song_chn1_ptn14
-dw song_chn1_ptn15
-dw song_chn2_ptn0
-dw song_chn2_ptn1
-dw song_chn2_ptn2
-dw song_chn2_ptn3
-dw song_chn2_ptn4
-dw song_chn2_ptn5
-dw song_chn2_ptn6
-dw song_chn2_ptn7
-dw song_chn2_ptn8
-dw song_chn2_ptn9
-dw song_chn2_ptn10
-dw song_chn2_ptn11
-dw song_chn2_ptn12
-dw song_chn3_ptn0
-dw song_chn3_ptn1
-dw song_chn3_ptn2
-dw song_chn3_ptn3
-song_song:
-db 0,3
-db 40,3
-db 80,3
-db 120,3
-dw song_instrument_table
-dw song_pattern_table
-db $0F,$06,$07,$07,$08,$00,$01,$02,$03,$04,$01,$02,$05,$06,$07,$07
-db $08,$00,$01,$02,$03,$04,$01,$02,$05,$09,$0A,$0B,$0C,$04,$01,$02
-db $0D,$09,$0A,$0B,$0C,$0E
+whiskey_pattern_table:
+dw whiskey_chn0_ptn0
+dw whiskey_chn0_ptn1
+dw whiskey_chn0_ptn2
+dw whiskey_chn0_ptn3
+dw whiskey_chn0_ptn4
+dw whiskey_chn0_ptn5
+dw whiskey_chn0_ptn6
+dw whiskey_chn0_ptn7
+dw whiskey_chn0_ptn8
+dw whiskey_chn0_ptn9
+dw whiskey_chn0_ptn10
+dw whiskey_chn0_ptn11
+dw whiskey_chn0_ptn12
+dw whiskey_chn0_ptn13
+dw whiskey_chn0_ptn14
+dw whiskey_chn1_ptn0
+dw whiskey_chn1_ptn1
+dw whiskey_chn1_ptn2
+dw whiskey_chn1_ptn3
+dw whiskey_chn1_ptn4
+dw whiskey_chn1_ptn5
+dw whiskey_chn1_ptn6
+dw whiskey_chn1_ptn7
+dw whiskey_chn1_ptn8
+dw whiskey_chn1_ptn9
+dw whiskey_chn1_ptn10
+dw whiskey_chn1_ptn11
+dw whiskey_chn1_ptn12
+dw whiskey_chn1_ptn13
+dw whiskey_chn1_ptn14
+dw whiskey_chn2_ptn0
+dw whiskey_chn2_ptn1
+dw whiskey_chn2_ptn2
+dw whiskey_chn2_ptn3
+dw whiskey_chn2_ptn4
+dw whiskey_chn2_ptn5
+dw whiskey_chn2_ptn6
+dw whiskey_chn2_ptn7
+dw whiskey_chn2_ptn8
+dw whiskey_chn2_ptn9
+dw whiskey_chn2_ptn10
+dw whiskey_chn2_ptn11
+dw whiskey_chn3_ptn0
+dw whiskey_chn3_ptn1
+dw whiskey_chn3_ptn2
+whiskey_song:
+db 0,4
+db 39,4
+db 78,4
+db 117,4
+dw whiskey_instrument_table
+dw whiskey_pattern_table
+db $06,$07,$07,$08,$00,$01,$02,$03,$04,$01,$02,$05,$06,$07,$07,$08
+db $00,$01,$02,$03,$04,$01,$02,$05,$09,$0A,$0B,$0C,$04,$01,$02,$0D
+db $09,$0A,$0B,$0C,$0E
 db $FE,0
-db $1F,$15,$16,$16,$17,$10,$11,$12,$13,$14,$11,$12,$13,$15,$16,$16
-db $17,$10,$11,$12,$13,$14,$11,$12,$13,$18,$19,$1A,$1B,$1C,$11,$12
-db $1D,$18,$19,$1A,$1B,$1E
-db $FE,40
-db $2C,$21,$20,$21,$20,$20,$21,$22,$20,$23,$24,$25,$26,$21,$20,$21
-db $20,$20,$21,$22,$20,$23,$24,$25,$26,$27,$22,$22,$20,$28,$29,$2A
-db $28,$27,$22,$22,$20,$2B
-db $FE,80
-db $30,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D
-db $2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2D,$2E,$2E,$2E
-db $2E,$2D,$2D,$2D,$2D,$2F
-db $FE,120
+db $14,$15,$15,$16,$0F,$10,$11,$12,$13,$10,$11,$12,$14,$15,$15,$16
+db $0F,$10,$11,$12,$13,$10,$11,$12,$17,$18,$19,$1A,$1B,$10,$11,$1C
+db $17,$18,$19,$1A,$1D
+db $FE,39
+db $1F,$1E,$1F,$1E,$1E,$1F,$20,$1E,$21,$22,$23,$24,$1F,$1E,$1F,$1E
+db $1E,$1F,$20,$1E,$21,$22,$23,$24,$25,$20,$20,$1E,$26,$27,$28,$26
+db $25,$20,$20,$1E,$29
+db $FE,78
+db $2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A
+db $2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2A,$2B,$2B,$2B,$2B
+db $2A,$2A,$2A,$2A,$2C
+db $FE,117
