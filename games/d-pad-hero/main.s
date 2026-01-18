@@ -2325,6 +2325,11 @@ SetupCurrentSong:
     ret
 
 GameInit:
+    ; palettes: from dimmed to bright
+    ld  a, %00011011
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
     ld de, GameTiles
     ld hl, $8000
     ld bc, GameTilesEnd - GameTiles
@@ -2935,8 +2940,8 @@ MainFunc_PlaytestSettingsInit:
     xor a
     ldh [hCurrentPlaytestSetting], a
 
-    ; standard palettes
-    ld  a, %00011011
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
 
@@ -4923,8 +4928,8 @@ MainFunc_SongSelectionInit:
     xor a
     ldh [hCurrentSong], a
 
-    ; standard palettes
-    ld  a, %00011011
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
 
@@ -5033,8 +5038,8 @@ MainFunc_SongSelection:
 
 
 MainFunc_SongSessionResultsInit:
-    ; standard palettes
-    ld  a, %00011011
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
     ldh [hShadowBGP], a
     ldh [hShadowOBP0], a
 
