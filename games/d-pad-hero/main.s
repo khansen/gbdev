@@ -5624,7 +5624,7 @@ SECTION "VRAM strings", ROM0
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
-db $99, $43, 8, "PARADISE"
+db $99, $43, 10, "MAPLE LEAF"
 db 0
 
 PlaytestSettingsScreenTilemap:
@@ -5656,16 +5656,16 @@ db 0
 SECTION "Hit cue streams", ROM0
 
 include "whiskeycues.inc"
-include "paradisecues.inc"
+include "maplecues.inc"
 
 SECTION "Song data", ROM0
 
 INCLUDE "whiskeysong.s"
-INCLUDE "paradisesong.s"
+INCLUDE "maplesong.s"
 INCLUDE "silentsong.s"
 
 SECTION "Song descriptors", ROM0
 
 SongDescriptors:
 dw whiskey_cues, whiskey_song
-dw paradise_cues, paradise_song
+dw maple_cues, maple_song
