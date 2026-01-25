@@ -1861,7 +1861,7 @@ dw .pulsemod_tick     ; 9
     jr nc, .slide_skip_dec
     ld a, [hl] ; Track_PeriodHi
     or a, a
-    jr z, .clamp_slide_up
+    jr z, .clamp_slide_down
     dec [hl] ; Track_PeriodHi
     .slide_skip_dec:
     pop hl ; Track_Effect_Param
