@@ -141,7 +141,7 @@ def Target_PosY_Int  rb 1               ; 03
 ; TODO: Target_ChordInstance
 def Target_SIZEOF    rb 0               ; 04
 
-def MAX_TARGETS equ 32
+def MAX_TARGETS equ 58
 
 ; --- Begin Sound engine
 
@@ -160,8 +160,7 @@ hShadowNR22: db
 hShadowNR32: db
 hShadowNR42: db
 
-; bits 4..0: whether channel is muted (1=yes)
-; bit 5: paused (1=yes)
+; bits 3..0: whether channel is muted (1=yes)
 hSoundStatus: db
 
 ; number of rows to wait before starting playback
@@ -220,8 +219,11 @@ def Track_SIZEOF rb 0                               ; 1A
 assert Track_Effect_Pos == $a
 assert Track_SIZEOF == $1a
 
-def NUM_TRACKS equ 4
+def NUM_MUSIC_TRACKS equ 4
+def NUM_SFX_TRACKS equ 4
+def NUM_TRACKS equ NUM_MUSIC_TRACKS + NUM_SFX_TRACKS
 
+assert (@ & $ff) == 0
 wTracks:
   ds Track_SIZEOF * NUM_TRACKS
 
@@ -725,9 +727,9 @@ EndDrawSprites:
 
 ; HL = pointer to song
 StartSong:
-    ld b, NUM_TRACKS
+    ld b, NUM_MUSIC_TRACKS
     ld de, wTracks + Track_Order_Pos
-    .loop:
+    .music_track_loop:
     ld a, [hli] ; order pos
     ld [de], a ; Track_Order_Pos
     cp a, $ff ; channel not in use?
@@ -765,23 +767,25 @@ endc
     ld a, e
     add a, Track_MasterVol - Track_Speed
     ld e, a
-    ld a, $f0
+    xor a, a
     ld [de], a ; Track_MasterVol
     inc de
-    xor a, a
     ld [de], a ; Track_PeriodIndex
     inc de
+    ld a, $ff
     ld [de], a ; Track_PeriodLo
     inc de
+    ld a, $7f
     ld [de], a ; Track_PeriodHi
     inc de ; Track_Square_DutyCtrl
     inc de ; Track_Envelope_Phase
+    xor a, a
     ld [de], a ; Track_Envelope_Phase
     ld a, e
     add a, Track_SIZEOF - Track_Envelope_Phase + Track_Order_Pos
     ld e, a
     dec b
-    jr nz, .loop
+    jr nz, .music_track_loop
     ; Instrument table
     ld a, [hli]
     ldh [hInstrumentTable], a
@@ -798,12 +802,66 @@ endc
     ld a, h
     ldh [hOrder+1], a
 
+    ; clear SFX tracks (set speed to $ff)
+    ld b, NUM_SFX_TRACKS
+    ld a, e
+    sub a, Track_Order_Pos
+    .sfx_track_loop:
+    ld e, a
+    ld a, $ff
+    ld [de], a ; Track_Speed
+    ld a, e
+    add a, Track_SIZEOF
+    dec b
+    jr nz, .sfx_track_loop
+
     ld a, $f0
     ldh [hMasterVol], a
     xor a
     ldh [hSoundStatus], a ; unmute all channels
     ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack0SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 0)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 0)*Track_SIZEOF + Track_Speed
+__PlaySFX: ; HL = Track_Speed
+    ld a, 7 ; default SFX speed (pattern data can use set speed effect to override)
+    ld [hli], a ; Track_Speed
+    dec a
+    ld [hli], a ; Track_Tick
+    xor a
+    ld [hli], a ; Track_Pattern_RowCount
+    dec a ; $ff
+    ld [hl], a ; Track_Pattern_Row
+    ret
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack1SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack2SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack3SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
 
 ; Volume envelope states
 def ENV_RESET equ $80
@@ -828,7 +886,8 @@ UpdateSound:
     ld a, [hli] ; Track_Speed
     cp a, $ff   ; is track used?
     jr nz, .process_track
-    ld de, Track_SIZEOF
+    .go_next_track:
+    ld de, Track_SIZEOF - 1
     add hl, de
     jp .next_track
     .process_track:
@@ -849,20 +908,16 @@ UpdateSound:
     ldh a, [hSoundPrerollRowsRemaining]
     or a, a ; is there a preroll to process?
     jr z, .no_preroll ; skip if not
+    bit 2, b
+    jr nz, .no_preroll ; no preroll for SFX tracks
     bit 0, b
     jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
     bit 1, b
     jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
     dec a
     ldh [hSoundPrerollRowsRemaining], a
-    jr nz, .preroll_not_done
-    ; preroll finished - unmute all channels and carry on!
-    ldh [hSoundStatus], a ; 0
-    jr .no_preroll
-    .preroll_not_done:
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
-    jr .continue_after_preroll_processing
+    jr nz, .continue_after_preroll_processing ; preroll not done
+    ; preroll finished - carry on!
     .no_preroll:
     ld a, [hli] ; Track_Pattern_RowCount
     inc [hl]    ; Track_Pattern_Row
@@ -877,7 +932,11 @@ UpdateSound:
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     .pre_order_loop:
-    ld c, [hl] ; Track_Order_Pos
+    ld a, [hl] ; Track_Order_Pos
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_order_pos
+    ; music track 0-3
+    ld c, a
     ldh a, [hOrder]
     add a, c
     ld e, a
@@ -897,6 +956,7 @@ UpdateSound:
     adc a, 0
     ld d, a
     ldh a, [hPatternTable]
+    .10:
     add a, c
     ld e, a
     jr nc, .skip_inc_d
@@ -920,6 +980,32 @@ UpdateSound:
     ld [hli], a ; Track_Pattern_RowCount
     inc l ; Track_Pattern_RowStatus
     jr .fetch_row_status
+    .is_sfx_order_pos:
+    bit 7, a ; end of SFX?
+    jr nz, .is_sfx_end
+    add a, a ; pattern number * 2
+    ld c, a
+    ld a, HIGH(SFXPatternTable)
+    adc a, 0
+    ld d, a
+    ld a, $ff ; on the next end of pattern, we will satisfy the "end of SFX" condition above
+    ld [hl], a ; Track_Order_Pos
+    ld a, LOW(SFXPatternTable)
+    jr .10
+    .is_sfx_end:
+    ; set track speed to $ff to mark as unused
+    pop hl ; Track_Pattern_Row
+    dec l ; Track_Pattern_RowCount
+    dec l ; Track_Tick
+    dec l ; Track_Speed
+    ld a, $ff
+    ld [hli], a ; Track_Speed
+    push hl ; Track_Tick
+    ld de, -(NUM_MUSIC_TRACKS * Track_SIZEOF) + Track_PeriodIndex - Track_Tick
+    add hl, de
+    set 7, [hl] ; set trigger flag
+    pop hl ; Track_Tick
+    jp .go_next_track
     .order_special:
     ; TODO: implement order commands. Assume $fe for now
     ld a, [de] ; order byte
@@ -1151,8 +1237,14 @@ IncPatternPtr:
     ret
 
 RenderChannel1:
+    ld hl, wTracks + NUM_MUSIC_TRACKS*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Square_DutyCtrl
+    jr z, .10
+    ld l, Track_Square_DutyCtrl + NUM_MUSIC_TRACKS*Track_SIZEOF ; render SFX
+    .10:
     ; NR11
-    ld hl, wTracks + Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
@@ -1165,14 +1257,21 @@ RenderChannel1:
     ldh [rNR11], a
 
     ; NR12
-    ld hl, wTracks + Track_Envelope_Vol
+    ld a, l ; Track_Square_DutyCtrl
+    add a, Track_Envelope_Vol - Track_Square_DutyCtrl
+    ld l, a
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1181,8 +1280,12 @@ RenderChannel1:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1222,6 +1325,9 @@ RenderChannel1:
     dec b
     jr nz, .dec_volume_loop
     .write_nr13:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 0, a
     jr z, .not_muted
@@ -1232,7 +1338,7 @@ RenderChannel1:
     jr .update_square_duty
     .not_muted:
     ; NR13
-    ld hl, wTracks + Track_PeriodLo
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR13], a
     ; NR14
@@ -1246,7 +1352,9 @@ RenderChannel1:
     ldh [rNR14], a
 
     .update_square_duty:
-    ld hl, wTracks + Track_Square_DutyCtrl
+    inc l ; Track_PeriodLo
+    inc l ; Track_PeriodHi
+    inc l ; Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     jr z, .skip_duty_update
@@ -1260,15 +1368,26 @@ RenderChannel1:
     ret
 
 RenderChannel3:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Envelope_Vol + Track_SIZEOF*2
+    jr z, .10
+    ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF ; render SFX
+    .10:
     ; NR32
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*2
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF*2
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1278,6 +1397,7 @@ RenderChannel3:
     ld hl, VolumeTable
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
     ldh [hShadowNR32], a
     swap a
     srl a ; volume in bits 6-5
@@ -1288,6 +1408,9 @@ RenderChannel3:
     xor a, $40 ; 100% or 25% volume
     .write_nr32:
     ldh [rNR32], a
+    ld a, l ; Track_MasterVol
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 2, a
     jr z, .not_muted
@@ -1298,7 +1421,8 @@ RenderChannel3:
     ret
     .not_muted:
     ; NR33
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF*2
+    inc l ; Track_PeriodIndex
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR33], a
     ; NR34
@@ -1313,8 +1437,14 @@ RenderChannel3:
     ret
 
 RenderChannel2:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Square_DutyCtrl + Track_SIZEOF
+    jr z, .10
+    ld l, Track_Square_DutyCtrl + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF ; render SFX
+    .10:
     ; NR21
-    ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
@@ -1327,14 +1457,21 @@ RenderChannel2:
     ldh [rNR21], a
 
     ; NR22
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF
+    ld a, l ; Track_Square_DutyCtrl
+    add a, Track_Envelope_Vol - Track_Square_DutyCtrl
+    ld l, a
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1343,8 +1480,12 @@ RenderChannel2:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1384,6 +1525,9 @@ RenderChannel2:
     dec b
     jr nz, .dec_volume_loop
     .write_nr23:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 1, a
     jr z, .not_muted
@@ -1394,7 +1538,7 @@ RenderChannel2:
     jr .update_square_duty
     .not_muted:
     ; NR23
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR23], a
     ; NR24
@@ -1408,7 +1552,9 @@ RenderChannel2:
     ldh [rNR24], a
 
     .update_square_duty:
-    ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
+    inc l ; Track_PeriodLo
+    inc l ; Track_PeriodHi
+    inc l ; Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     jr z, .skip_duty_update
@@ -1422,15 +1568,26 @@ RenderChannel2:
     ret
 
 RenderChannel4:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Envelope_Vol + Track_SIZEOF*3
+    jr z, .10
+    ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF ; render SFX
+    .10:
     ; NR42
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*3
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF*3
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1439,8 +1596,12 @@ RenderChannel4:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF*3
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1480,6 +1641,9 @@ RenderChannel4:
     dec b
     jr nz, .dec_volume_loop
     .write_nr43:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 3, a
     jr z, .not_muted
@@ -1490,7 +1654,7 @@ RenderChannel4:
     ret
     .not_muted:
     ; NR43
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF*3
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ld c, a
     ld a, [hli] ; Track_PeriodHi
@@ -1682,10 +1846,14 @@ SetInstrument:
     sla a
     sla a ; each instrument is 8 bytes long
     ld c, a
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_track
+    ; music track (0-3) - use the song's instrument table
     ldh a, [hInstrumentTable]
     add a, c
     ld e, a
     ldh a, [hInstrumentTable+1]
+    .10:
     adc a, 0
     ld d, a
     ld a, l
@@ -1715,12 +1883,21 @@ SetInstrument:
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ret
+    .is_sfx_track:
+    ld a, LOW(SFXInstrumentTable)
+    add a, c
+    ld e, a
+    ld a, HIGH(SFXInstrumentTable)
+    jr .10
 
 ; A = new speed
 ; preserves DE and HL
 SetSpeed:
     push de
     push hl
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_track
+    ; music track (0-3) - propagate speed to all tracks
     ld hl, wTracks + Track_Speed
     ld de, Track_SIZEOF
     ld [hl], a ; Track_Speed
@@ -1729,10 +1906,24 @@ SetSpeed:
     add hl, de
     ld [hl], a ; Track_Speed
     add hl, de
+    .set_one_track_speed:
     ld [hl], a ; Track_Speed
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ret
+    .is_sfx_track:
+    ld hl, wTracks + Track_Speed + NUM_MUSIC_TRACKS*Track_SIZEOF
+    ld de, Track_SIZEOF
+    bit 0, b
+    jr z, .skip_add
+    add hl, de
+    .skip_add:
+    bit 1, b
+    jr z, .skip_add_2
+    add hl, de
+    add hl, de
+    .skip_add_2:
+    jr .set_one_track_speed
 
 ; A = effect kind, HL = Track_Effect_Param
 EffectTick:
@@ -3206,15 +3397,23 @@ MainFunc_PlaytestSettings:
     ret
 
     .previousSetting:
+    ld a, 0
+    call PlayTrack0SFX
     jp PreviousPlaytestSetting
 
     .nextSetting:
+    ld a, 0
+    call PlayTrack0SFX
     jp NextPlaytestSetting
 
     .previousValue:
+    ld a, 1
+    call PlayTrack0SFX
     jp PreviousPlaytestSettingValue
 
     .nextValue:
+    ld a, 1
+    call PlayTrack0SFX
     jp NextPlaytestSettingValue
 
     .startPressed:
@@ -4465,6 +4664,8 @@ CheckForErrors:
     pop af
     .10:
     jr nz, .misPressesLoop
+    ld a, 2
+    call PlayTrack0SFX
     jp ResetCurrentStreak
 
 ; ProcessActiveTargets() helper function.
@@ -5044,6 +5245,8 @@ MainFunc_SongSelection:
     jp TurnOffLCD
 
     .previousSong:
+    ld a, 0
+    call PlayTrack0SFX
     call EraseCurrentSongIndicator
     ldh a, [hCurrentSong]
     or a
@@ -5055,6 +5258,8 @@ MainFunc_SongSelection:
     jp PrintCurrentSongSelectionIndicator
 
     .nextSong:
+    ld a, 0
+    call PlayTrack0SFX
     call EraseCurrentSongIndicator
     ldh a, [hCurrentSong]
     inc a
@@ -5663,6 +5868,42 @@ SECTION "Song data", ROM0
 INCLUDE "whiskeysong.s"
 INCLUDE "maplesong.s"
 INCLUDE "silentsong.s"
+
+SECTION "SFX data", ROM0
+
+SFXPatternTable:
+dw SFX0Pattern
+dw SFX1Pattern
+dw SFX2Pattern
+
+SFX0Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b0 ; instrument 0
+db 30 ; period index
+SFX1Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b1 ; instrument 1
+db 20 ; period index
+SFX2Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b2 ; instrument 2
+db 19 ; period index
+
+SFXInstrumentTable:
+dw .env0
+db $00,$02,$20,$18,$00,$00 ; 0
+dw .env0
+db $00,$01,$20,$68,$00,$00 ; 1
+dw .env0
+db $00,$04,$cf,$48,$00,$00 ; 2
+
+.env0:
+db $F0
+db $10,$00,$00
+db $FF,$FF
 
 SECTION "Song descriptors", ROM0
 
