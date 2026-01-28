@@ -3490,8 +3490,6 @@ MainFunc_PlaytestSettingsInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     ld a, 2
     ldh [hMainState], a ; playtest settings
@@ -4015,8 +4013,6 @@ MainFunc_DifficultySelectionInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     ld a, 13
     ldh [hMainState], a ; difficulty selection
@@ -5648,8 +5644,6 @@ MainFunc_SongSelectionInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     call PrintCurrentSongSelectionIndicator
 
@@ -5754,8 +5748,6 @@ MainFunc_SongSessionResultsInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     ld a, 9
     ldh [hMainState], a ; song session results
