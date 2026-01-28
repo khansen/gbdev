@@ -10,7 +10,9 @@ CHRS = targetsprites.bin \
 	explosionsprites.bin \
 	gamescreentiles.bin \
 	gamescreentilemap.bin \
-	playtestsettingsfont.bin
+	playtestsettingsfont.bin \
+	progressbartiles.bin \
+	hilitehitzonetiles.bin
 
 $(PROGRAM).o: main.s \
 	whiskeysong.s \

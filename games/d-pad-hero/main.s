@@ -75,6 +75,7 @@ hHitLanes: db
 hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
+hLaneHitZoneHighlightTimers: ds 2
 
 hHealth: db
 hHealthChanged: db
@@ -2646,6 +2647,162 @@ DrawEmptyProgressBar:
     ld [hli], a
     jp EndVramString
 
+def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $b9
+
+def LANE_HIT_ZONE_HIGHLIGHT_TIMER equ 10
+
+; B = lane index (0-3)
+TriggerLaneHitZoneHighlight:
+    bit 1, b
+    jr nz, .lane_2_or_3
+    bit 0, b
+    ldh a, [hLaneHitZoneHighlightTimers]
+    jr z, .set_lane_0_timer
+    ; lane 1
+    and $0f
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER << 4
+    jr .set_lane_0_or_1_timer
+    .set_lane_0_timer:
+    and $f0
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER
+    .set_lane_0_or_1_timer:
+    ldh [hLaneHitZoneHighlightTimers], a
+    jr DrawLaneHitZoneHighlight
+    .lane_2_or_3:
+    bit 0, b
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    jr z, .set_lane_2_timer
+    ; lane 3
+    and $0f
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER << 4
+    jr .set_lane_2_or_3_timer
+    .set_lane_2_timer:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $f0
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER
+    .set_lane_2_or_3_timer:
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    ; Fallthrough
+
+; B = lane index (0-3)
+; Destroys: A, D, E, C
+DrawLaneHitZoneHighlight:
+    ; top half
+    ld a, b
+    sla a
+    add a, b
+    add a, $e1
+    ld e, a
+    ld d, $99
+    push de
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 1
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 2
+    ld [hli], a
+    call EndVramString
+    ; bottom half
+    pop de
+    inc d
+    ld a, e
+    and a, $1f
+    ld e, a
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 3
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 5
+    ld [hli], a
+    jp EndVramString
+
+ProcessLaneHighlights:
+    ; lane 0
+    ldh a, [hLaneHitZoneHighlightTimers]
+    and $0f
+    jr z, .check_lane_1
+    ldh a, [hLaneHitZoneHighlightTimers]
+    dec a
+    ldh [hLaneHitZoneHighlightTimers], a
+    and $0f
+    jr nz, .check_lane_1
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_1:
+    ldh a, [hLaneHitZoneHighlightTimers]
+    and $f0
+    jr z, .check_lane_2
+    ldh a, [hLaneHitZoneHighlightTimers]
+    sub a, $10
+    ldh [hLaneHitZoneHighlightTimers], a
+    and $f0
+    jr nz, .check_lane_2
+    ld a, 1
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_2:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $0f
+    jr z, .check_lane_3
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    dec a
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    and $0f
+    jr nz, .check_lane_3
+    ld a, 2
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_3:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $f0
+    ret z
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    sub a, $10
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    and $f0
+    ret nz
+    ld a, 3
+    ; Fallthrough
+
+; A = lane index (0-3)
+EraseLaneHitZoneHighlight:
+    ; top half
+    ld e, a
+    sla a
+    add a, e
+    add a, $e1
+    ld e, a
+    ld d, $99
+    push de
+    ld c, $03
+    call BeginVramString
+    ld a, $56
+    ld [hli], a
+    ld a, $56 + 1
+    ld [hli], a
+    ld a, $56 + 2
+    ld [hli], a
+    call EndVramString
+    ; bottom half
+    pop de
+    inc d
+    ld a, e
+    and a, $1f
+    ld e, a
+    ld c, $03
+    call BeginVramString
+    ld a, $5f
+    ld [hli], a
+    ld a, $5f + 1
+    ld [hli], a
+    ld a, $5f + 2
+    ld [hli], a
+    jp EndVramString
+
 ResetGameStats:
     xor a
     ldh [hTapHitCount], a
@@ -2674,6 +2831,7 @@ ResetGameStats:
     ldh [hMaxStreak+1], a
     ret
 
+; Destroys: A
 IncTapHitCount:
     ldh a, [hTapHitCount]
     inc a
@@ -2684,6 +2842,7 @@ IncTapHitCount:
     ldh [hTapHitCount+1], a
     ret
 
+; Destroys: A
 IncTapMissCount:
     ldh a, [hTapMissCount]
     inc a
@@ -2694,6 +2853,7 @@ IncTapMissCount:
     ldh [hTapMissCount+1], a
     ret
 
+; Destroys: A
 IncHoldHeadHitCount:
     ldh a, [hHoldHeadHitCount]
     inc a
@@ -2704,6 +2864,7 @@ IncHoldHeadHitCount:
     ldh [hHoldHeadHitCount+1], a
     ret
 
+; Destroys: A
 IncHoldHeadMissCount:
     ldh a, [hHoldHeadMissCount]
     inc a
@@ -2714,6 +2875,7 @@ IncHoldHeadMissCount:
     ldh [hHoldHeadMissCount+1], a
     ret
 
+; Destroys: A
 IncHoldCompleteCount:
     ldh a, [hHoldCompleteCount]
     inc a
@@ -2724,6 +2886,7 @@ IncHoldCompleteCount:
     ldh [hHoldCompleteCount+1], a
     ret
 
+; Destroys: A
 IncHoldBreakCount:
     ldh a, [hHoldBreakCount]
     inc a
@@ -2734,6 +2897,7 @@ IncHoldBreakCount:
     ldh [hHoldBreakCount+1], a
     ret
 
+; Destroys: A
 IncMisPressCount:
     ldh a, [hMisPressCount]
     inc a
@@ -2822,26 +2986,31 @@ UpdateMaxStreak:
     ret
 
 
+; Destroys: A
 DealTapOrHoldHeadMissDamage:
     ld a, [hl] ; Target_State
     and a, $fc ; extended duration?
     jr nz, DealHoldHeadMissDamage
 
+; Destroys: A
 DealTapMissDamage:
     ldh a, [hHealth]
     sub a, TAP_MISS_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealHoldHeadMissDamage:
     ldh a, [hHealth]
     sub a, HOLD_HEAD_MISS_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealHoldBreakDamage:
     ldh a, [hHealth]
     sub a, HOLD_BREAK_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealMisPressDamage:
     ldh a, [hHealth]
     sub a, MISPRESS_DAMAGE
@@ -2853,8 +3022,10 @@ __SaveHealth:
     xor a
     .no_death:
     ldh [hHealth], a
+    ; TODO: set health changed flag
     ret
 
+; Destroys: A
 RecoverHealth:
     ldh a, [hHealth]
     add a, 1
@@ -2865,6 +3036,7 @@ RecoverHealth:
     .cap_health:
     ld a, HEALTH_MAX
     ldh [hHealth], a
+    ; TODO: set health changed flag
     ret
 
 CheckIfHealthChanged:
@@ -3707,6 +3879,7 @@ MainFunc_Gameplay:
     call ProcessHeldTargets
     call ProcessHitTargets
     call ProcessMissedTargets
+    call ProcessLaneHighlights
     jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
@@ -4654,15 +4827,18 @@ CheckForErrors:
     and a, b
     ldh [hErrorLanes], a
     ret z ; exit if no errors
+    ld b, 0 ; lane index
     .misPressesLoop:
     srl a
+    push af
     jr nc, .10
     ; mis-press in this lane
-    push af
     call IncMisPressCount
     call DealMisPressDamage
-    pop af
+    call TriggerLaneHitZoneHighlight
     .10:
+    inc b ; next lane
+    pop af
     jr nz, .misPressesLoop
     ld a, 2
     call PlayTrack0SFX
@@ -5822,6 +5998,7 @@ incbin "gamescreentiles.bin"
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
+incbin "hilitehitzonetiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
