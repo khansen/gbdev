@@ -12,7 +12,8 @@ CHRS = targetsprites.bin \
 	gamescreentilemap.bin \
 	playtestsettingsfont.bin \
 	progressbartiles.bin \
-	hilitehitzonetiles.bin
+	hilitehitzonetiles.bin \
+	misstiles.bin
 
 $(PROGRAM).o: main.s \
 	whiskeysong.s \

@@ -76,6 +76,7 @@ hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
 hLaneHitZoneHighlightTimers: ds 2
+hLaneMissIndicatorTimers: ds 2
 
 hHealth: db
 hHealthChanged: db
@@ -2685,7 +2686,7 @@ TriggerLaneHitZoneHighlight:
     ; Fallthrough
 
 ; B = lane index (0-3)
-; Destroys: A, D, E, C
+; Destroys: A, D, E, C, HL
 DrawLaneHitZoneHighlight:
     ; top half
     ld a, b
@@ -2802,6 +2803,128 @@ EraseLaneHitZoneHighlight:
     ld a, $5f + 2
     ld [hli], a
     jp EndVramString
+
+def LANE_MISS_TILES_BASE equ $bf
+
+def LANE_MISS_INDICATOR_TIMER equ 14
+
+; B = lane index (0-3)
+TriggerLaneMissIndicator:
+    bit 1, b
+    jr nz, .lane_2_or_3
+    bit 0, b
+    ldh a, [hLaneMissIndicatorTimers]
+    jr z, .set_lane_0_timer
+    ; lane 1
+    and $0f
+    or LANE_MISS_INDICATOR_TIMER << 4
+    jr .set_lane_0_or_1_timer
+    .set_lane_0_timer:
+    and $f0
+    or LANE_MISS_INDICATOR_TIMER
+    .set_lane_0_or_1_timer:
+    ldh [hLaneMissIndicatorTimers], a
+    jr DrawLaneMissIndicator
+    .lane_2_or_3:
+    bit 0, b
+    ldh a, [hLaneMissIndicatorTimers+1]
+    jr z, .set_lane_2_timer
+    ; lane 3
+    and $0f
+    or LANE_MISS_INDICATOR_TIMER << 4
+    jr .set_lane_2_or_3_timer
+    .set_lane_2_timer:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $f0
+    or LANE_MISS_INDICATOR_TIMER
+    .set_lane_2_or_3_timer:
+    ldh [hLaneMissIndicatorTimers+1], a
+    ; Fallthrough
+
+; B = lane index (0-3)
+; Destroys: A, D, E, C, HL
+DrawLaneMissIndicator:
+    ld a, b
+    sla a
+    add a, b
+    add a, $21
+    ld e, a
+    ld d, $9a
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_MISS_TILES_BASE
+    ld [hli], a
+    ld a, LANE_MISS_TILES_BASE + 1
+    ld [hli], a
+    ld a, LANE_MISS_TILES_BASE + 2
+    ld [hli], a
+    jp EndVramString
+
+ProcessLaneMissIndicators:
+    ldh a, [hFrameCounter]
+    and 3
+    ret nz ; process every fourth frame only
+    ; lane 0
+    ldh a, [hLaneMissIndicatorTimers]
+    and $0f
+    jr z, .check_lane_1
+    ldh a, [hLaneMissIndicatorTimers]
+    dec a
+    ldh [hLaneMissIndicatorTimers], a
+    and $0f
+    jr nz, .check_lane_1
+    call EraseLaneMissIndicator
+
+    .check_lane_1:
+    ldh a, [hLaneMissIndicatorTimers]
+    and $f0
+    jr z, .check_lane_2
+    ldh a, [hLaneMissIndicatorTimers]
+    sub a, $10
+    ldh [hLaneMissIndicatorTimers], a
+    and $f0
+    jr nz, .check_lane_2
+    ld a, 1
+    call EraseLaneMissIndicator
+
+    .check_lane_2:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $0f
+    jr z, .check_lane_3
+    ldh a, [hLaneMissIndicatorTimers+1]
+    dec a
+    ldh [hLaneMissIndicatorTimers+1], a
+    and $0f
+    jr nz, .check_lane_3
+    ld a, 2
+    call EraseLaneMissIndicator
+
+    .check_lane_3:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $f0
+    ret z
+    ldh a, [hLaneMissIndicatorTimers+1]
+    sub a, $10
+    ldh [hLaneMissIndicatorTimers+1], a
+    and $f0
+    ret nz
+    ld a, 3
+    ; Fallthrough
+
+; A = lane index (0-3)
+EraseLaneMissIndicator:
+    ld e, a
+    sla a
+    add a, e
+    add a, $21
+    ld e, a
+    ld d, $9a
+    ld c, $43
+    call BeginVramString
+    xor a
+    ld [hli], a
+    jp EndVramString
+
 
 ResetGameStats:
     xor a
@@ -3880,6 +4003,7 @@ MainFunc_Gameplay:
     call ProcessHitTargets
     call ProcessMissedTargets
     call ProcessLaneHighlights
+    call ProcessLaneMissIndicators
     jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
@@ -3896,6 +4020,7 @@ MainFunc_WaitForAllClear:
     ldh a, [hMissedTargetsHead]
     cp ZILCH_ITEM ; any missed targets?
     ret nz ; exit if so
+    ; TODO: expire any remaining lane highlights and miss indicators
     ld a, 30 ; timer
     ld b, 7 ; game finished
     jp SetTimerWithNextStateTimeout
@@ -4611,6 +4736,12 @@ ProcessActiveTargets:
     jr .loop
 
     .missed:
+    call HandleMissedTarget
+    jr .loop
+
+
+; HL = pointer to Target_State
+HandleMissedTarget:
     call IncTapOrHoldHeadMissCount
     call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
@@ -4620,12 +4751,20 @@ ProcessActiveTargets:
     or a, 3
     ldh [hSoundStatus], a
 
+; trigger lane miss indicator
+    ld a, [hl] ; Target_State
+    and a, 3 ; lane
+    ld b, a
+    push hl ; Target_State
+    call TriggerLaneMissIndicator
+    pop hl ; Target_State
+
 ; move active target to missed list
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
-    call MoveActiveTargetToMissedList
-    jr .loop
+    jp MoveActiveTargetToMissedList
+
 
 ; HL = pointer to Target_State
 MoveTarget:
@@ -5999,6 +6138,7 @@ incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
 incbin "hilitehitzonetiles.bin"
+incbin "misstiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
