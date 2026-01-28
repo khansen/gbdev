@@ -122,6 +122,8 @@ hGameBehaviorState1: db
 def GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE      equ %00000011
 def GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE           equ 3
 hIntensityMax: db
+hDifficultyLevel: db
+def DIFFICULTY_LEVELS_COUNT equ 5
 
 ; Playtest settings screen
 hCurrentPlaytestSetting: db
@@ -577,6 +579,12 @@ CopyFromHLIntoWav3Ram:
 ; === End courtesy of https://github.com/vinheim3/tetris-gb-disasm/ ===
 
 ; --- Begin gfx-related procedures ---
+
+ClearTilemap:
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    jp SetMemory
 
 FlushVramBuffer:
     ldh a, [hVramBufferOffset]
@@ -2557,11 +2565,7 @@ GameInit:
     ld bc, GameTilesEnd - GameTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, GameScreenTilemap
     call WriteVramStrings
@@ -3387,6 +3391,8 @@ dw MainFunc_SongSessionResultsInit ; 8
 dw MainFunc_SongSessionResults ; 9
 dw MainFunc_SongSelectionInit ; 10
 dw MainFunc_SongSelection ; 11
+dw MainFunc_DifficultySelectionInit ; 12
+dw MainFunc_DifficultySelection ; 13
 
 MainFunc_NoOp:
     ret
@@ -3465,11 +3471,7 @@ MainFunc_PlaytestSettingsInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, PlaytestSettingsScreenTilemap
     call WriteVramStrings
@@ -3984,6 +3986,159 @@ NextRandomNotesStylePlaytestSetting:
     or GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
     ldh [hGameBehaviorState0], a
     jp PrintRandomNotesStylePlaytestSetting
+
+
+MainFunc_DifficultySelectionInit:
+    ld a, 2 ; Normal is default
+    ldh [hDifficultyLevel], a ; TODO: remember last selected difficulty per song
+
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+
+    ld hl, DifficultySelectionScreenTilemap
+    call WriteVramStrings
+
+    call PrintCurrentDifficultyLevelIndicator
+    call FlushVramBuffer
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+    ld a, $f
+    ldh [hSoundStatus], a ; mute all channels
+
+    ld a, 13
+    ldh [hMainState], a ; difficulty selection
+    jp TurnOnLCD
+
+BeginCurrentDifficultyLevelIndicatorVramString:
+    ld d, $02
+    ldh a, [hDifficultyLevel]
+    add a, $63
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 4
+    ld e, a
+    ld c, 1
+    jp BeginVramString
+
+PrintCurrentDifficultyLevelIndicator:
+    call BeginCurrentDifficultyLevelIndicatorVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentDifficultyLevelIndicator:
+    call BeginCurrentDifficultyLevelIndicatorVramString
+    xor a ; blank tile
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_DifficultySelection:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .commit
+    bit PADB_A, a
+    jr nz, .commit
+
+    bit PADB_UP, a
+    jr nz, .previous
+    bit PADB_DOWN, a
+    jr nz, .next
+    bit PADB_SELECT, a
+    jr nz, .next
+    bit PADB_B, a
+    jr nz, .back
+    ret
+
+    .previous:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentDifficultyLevelIndicator
+    ldh a, [hDifficultyLevel]
+    or a
+    jr nz, .noWrapToLast
+    ld a, DIFFICULTY_LEVELS_COUNT
+    .noWrapToLast:
+    dec a
+    ldh [hDifficultyLevel], a
+    jp PrintCurrentDifficultyLevelIndicator
+
+    .next:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentDifficultyLevelIndicator
+    ldh a, [hDifficultyLevel]
+    inc a
+    cp DIFFICULTY_LEVELS_COUNT
+    jr c, .noWrapToFirst
+    xor a
+    .noWrapToFirst:
+    ldh [hDifficultyLevel], a
+    jp PrintCurrentDifficultyLevelIndicator
+
+    .back:
+    ld a, 10
+    ldh [hMainState], a ; song selection init
+    jp TurnOffLCD
+
+    .commit:
+    call InitializeGameplayParametersFromDifficultyLevel
+    ld a, 3
+    ldh [hMainState], a ; game init
+    jp TurnOffLCD
+
+InitializeGameplayParametersFromDifficultyLevel:
+    ldh a, [hDifficultyLevel]
+    sla a
+    ld d, 0
+    ld e, a
+    ld hl, .ParametersByDifficultyLevel
+    add hl, de
+    ld a, [hli]
+    ldh [hGameBehaviorState0], a
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE ; TODO: make it variable per difficulty level
+    ldh [hGameBehaviorState1], a
+    ld a, [hl]
+    ldh [hIntensityMax], a
+    ret
+.ParametersByDifficultyLevel:
+; Beginner
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+db $10 ; intensity max
+; Easy
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+db $30 ; intensity max
+; Normal
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+db $70 ; intensity max
+; Hard
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+db $b0 ; intensity max
+; Expert
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+db $f0 ; intensity max
 
 
 MainFunc_GameInit:
@@ -5484,11 +5639,7 @@ MainFunc_SongSelectionInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, SongSelectionScreenTilemap
     call WriteVramStrings
@@ -5506,7 +5657,7 @@ MainFunc_SongSelectionInit:
     ldh [hMainState], a ; song selection
     jp TurnOnLCD
 
-PrintCurrentSongSelectionIndicator:
+BeginCurrentSongSelectionIndicatorVramString:
     ld d, $99
     ldh a, [hCurrentSong]
     sla a
@@ -5518,24 +5669,16 @@ PrintCurrentSongSelectionIndicator:
     add a, $01
     ld e, a
     ld c, 1
-    call BeginVramString
+    jp BeginVramString
+
+PrintCurrentSongSelectionIndicator:
+    call BeginCurrentSongSelectionIndicatorVramString
     ld a, $26 ; '*'
     ld [hli], a
     jp EndVramString
 
 EraseCurrentSongIndicator:
-    ld d, $99
-    ldh a, [hCurrentSong]
-    sla a
-    sla a
-    sla a
-    sla a
-    sla a
-    sla a
-    add a, $01
-    ld e, a
-    ld c, 1
-    call BeginVramString
+    call BeginCurrentSongSelectionIndicatorVramString
     ld a, 0 ; space
     ld [hli], a
     jp EndVramString
@@ -5555,7 +5698,8 @@ MainFunc_SongSelection:
     ret z
 
     .chooseSong:
-    ld a, 1 ; playtest settings init
+;    ld a, 1 ; playtest settings init
+    ld a, 12 ; difficulty selection init
     ldh [hMainState], a
     jp TurnOffLCD
 
@@ -5598,11 +5742,7 @@ MainFunc_SongSessionResultsInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, SongSessionResultsScreenTilemap
     call WriteVramStrings
@@ -6147,6 +6287,15 @@ SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
 db $99, $43, 10, "MAPLE LEAF"
+db 0
+
+DifficultySelectionScreenTilemap:
+db $98, $65, 11, "DIFFICULTY:"
+db $98, $c6, 8, "BEGINNER"
+db $99, $06, 4, "EASY"
+db $99, $46, 6, "NORMAL"
+db $99, $86, 4, "HARD"
+db $99, $c6, 6, "EXPERT"
 db 0
 
 PlaytestSettingsScreenTilemap:
