@@ -4605,7 +4605,7 @@ GetLaneInputsFromButtons:
     jr z, .10
     set 0, b
     .10:
-    bit PADB_RIGHT, a
+    bit PADB_DOWN, a
     jr z, .20
     set 1, b
     .20:
@@ -4627,7 +4627,7 @@ GetLaneInputsFromButtons:
     jr z, .50
     set 0, b
     .50:
-    bit PADB_RIGHT, a
+    bit PADB_DOWN, a
     jr z, .60
     set 1, b
     .60:
