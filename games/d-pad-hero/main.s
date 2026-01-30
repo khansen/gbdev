@@ -75,6 +75,8 @@ hHitLanes: db
 hErrorLanes: db
 hDrawHoldLength: db
 hSuppressedLanes: db
+hLaneHitZoneHighlightTimers: ds 2
+hLaneMissIndicatorTimers: ds 2
 
 hHealth: db
 hHealthChanged: db
@@ -120,6 +122,8 @@ hGameBehaviorState1: db
 def GAME_BEHAVIOR_STATE1_MASK__MAX_NOTES_PER_CUE      equ %00000011
 def GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE           equ 3
 hIntensityMax: db
+hDifficultyLevel: db
+def DIFFICULTY_LEVELS_COUNT equ 5
 
 ; Playtest settings screen
 hCurrentPlaytestSetting: db
@@ -141,7 +145,7 @@ def Target_PosY_Int  rb 1               ; 03
 ; TODO: Target_ChordInstance
 def Target_SIZEOF    rb 0               ; 04
 
-def MAX_TARGETS equ 32
+def MAX_TARGETS equ 58
 
 ; --- Begin Sound engine
 
@@ -160,8 +164,7 @@ hShadowNR22: db
 hShadowNR32: db
 hShadowNR42: db
 
-; bits 4..0: whether channel is muted (1=yes)
-; bit 5: paused (1=yes)
+; bits 3..0: whether channel is muted (1=yes)
 hSoundStatus: db
 
 ; number of rows to wait before starting playback
@@ -220,8 +223,11 @@ def Track_SIZEOF rb 0                               ; 1A
 assert Track_Effect_Pos == $a
 assert Track_SIZEOF == $1a
 
-def NUM_TRACKS equ 4
+def NUM_MUSIC_TRACKS equ 4
+def NUM_SFX_TRACKS equ 4
+def NUM_TRACKS equ NUM_MUSIC_TRACKS + NUM_SFX_TRACKS
 
+assert (@ & $ff) == 0
 wTracks:
   ds Track_SIZEOF * NUM_TRACKS
 
@@ -574,6 +580,12 @@ CopyFromHLIntoWav3Ram:
 
 ; --- Begin gfx-related procedures ---
 
+ClearTilemap:
+    ld e, 0
+    ld hl, $9800
+    ld bc, $240
+    jp SetMemory
+
 FlushVramBuffer:
     ldh a, [hVramBufferOffset]
     or a, a
@@ -725,9 +737,9 @@ EndDrawSprites:
 
 ; HL = pointer to song
 StartSong:
-    ld b, NUM_TRACKS
+    ld b, NUM_MUSIC_TRACKS
     ld de, wTracks + Track_Order_Pos
-    .loop:
+    .music_track_loop:
     ld a, [hli] ; order pos
     ld [de], a ; Track_Order_Pos
     cp a, $ff ; channel not in use?
@@ -765,23 +777,25 @@ endc
     ld a, e
     add a, Track_MasterVol - Track_Speed
     ld e, a
-    ld a, $f0
+    xor a, a
     ld [de], a ; Track_MasterVol
     inc de
-    xor a, a
     ld [de], a ; Track_PeriodIndex
     inc de
+    ld a, $ff
     ld [de], a ; Track_PeriodLo
     inc de
+    ld a, $7f
     ld [de], a ; Track_PeriodHi
     inc de ; Track_Square_DutyCtrl
     inc de ; Track_Envelope_Phase
+    xor a, a
     ld [de], a ; Track_Envelope_Phase
     ld a, e
     add a, Track_SIZEOF - Track_Envelope_Phase + Track_Order_Pos
     ld e, a
     dec b
-    jr nz, .loop
+    jr nz, .music_track_loop
     ; Instrument table
     ld a, [hli]
     ldh [hInstrumentTable], a
@@ -798,12 +812,66 @@ endc
     ld a, h
     ldh [hOrder+1], a
 
+    ; clear SFX tracks (set speed to $ff)
+    ld b, NUM_SFX_TRACKS
+    ld a, e
+    sub a, Track_Order_Pos
+    .sfx_track_loop:
+    ld e, a
+    ld a, $ff
+    ld [de], a ; Track_Speed
+    ld a, e
+    add a, Track_SIZEOF
+    dec b
+    jr nz, .sfx_track_loop
+
     ld a, $f0
     ldh [hMasterVol], a
     xor a
     ldh [hSoundStatus], a ; unmute all channels
     ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack0SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 0)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 0)*Track_SIZEOF + Track_Speed
+__PlaySFX: ; HL = Track_Speed
+    ld a, 7 ; default SFX speed (pattern data can use set speed effect to override)
+    ld [hli], a ; Track_Speed
+    dec a
+    ld [hli], a ; Track_Tick
+    xor a
+    ld [hli], a ; Track_Pattern_RowCount
+    dec a ; $ff
+    ld [hl], a ; Track_Pattern_Row
+    ret
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack1SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack2SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
+
+; A = SFX (pattern) number
+; Destroys: HL, A
+PlayTrack3SFX:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Order_Pos
+    ld [hl], a ; Track_Order_Pos
+    ld l, (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Speed
+    jr __PlaySFX
 
 ; Volume envelope states
 def ENV_RESET equ $80
@@ -828,7 +896,8 @@ UpdateSound:
     ld a, [hli] ; Track_Speed
     cp a, $ff   ; is track used?
     jr nz, .process_track
-    ld de, Track_SIZEOF
+    .go_next_track:
+    ld de, Track_SIZEOF - 1
     add hl, de
     jp .next_track
     .process_track:
@@ -849,20 +918,16 @@ UpdateSound:
     ldh a, [hSoundPrerollRowsRemaining]
     or a, a ; is there a preroll to process?
     jr z, .no_preroll ; skip if not
+    bit 2, b
+    jr nz, .no_preroll ; no preroll for SFX tracks
     bit 0, b
     jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
     bit 1, b
     jr nz, .continue_after_preroll_processing ; preroll is only decremented on channel 0
     dec a
     ldh [hSoundPrerollRowsRemaining], a
-    jr nz, .preroll_not_done
-    ; preroll finished - unmute all channels and carry on!
-    ldh [hSoundStatus], a ; 0
-    jr .no_preroll
-    .preroll_not_done:
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
-    jr .continue_after_preroll_processing
+    jr nz, .continue_after_preroll_processing ; preroll not done
+    ; preroll finished - carry on!
     .no_preroll:
     ld a, [hli] ; Track_Pattern_RowCount
     inc [hl]    ; Track_Pattern_Row
@@ -877,7 +942,11 @@ UpdateSound:
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     .pre_order_loop:
-    ld c, [hl] ; Track_Order_Pos
+    ld a, [hl] ; Track_Order_Pos
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_order_pos
+    ; music track 0-3
+    ld c, a
     ldh a, [hOrder]
     add a, c
     ld e, a
@@ -897,6 +966,7 @@ UpdateSound:
     adc a, 0
     ld d, a
     ldh a, [hPatternTable]
+    .10:
     add a, c
     ld e, a
     jr nc, .skip_inc_d
@@ -920,6 +990,32 @@ UpdateSound:
     ld [hli], a ; Track_Pattern_RowCount
     inc l ; Track_Pattern_RowStatus
     jr .fetch_row_status
+    .is_sfx_order_pos:
+    bit 7, a ; end of SFX?
+    jr nz, .is_sfx_end
+    add a, a ; pattern number * 2
+    ld c, a
+    ld a, HIGH(SFXPatternTable)
+    adc a, 0
+    ld d, a
+    ld a, $ff ; on the next end of pattern, we will satisfy the "end of SFX" condition above
+    ld [hl], a ; Track_Order_Pos
+    ld a, LOW(SFXPatternTable)
+    jr .10
+    .is_sfx_end:
+    ; set track speed to $ff to mark as unused
+    pop hl ; Track_Pattern_Row
+    dec l ; Track_Pattern_RowCount
+    dec l ; Track_Tick
+    dec l ; Track_Speed
+    ld a, $ff
+    ld [hli], a ; Track_Speed
+    push hl ; Track_Tick
+    ld de, -(NUM_MUSIC_TRACKS * Track_SIZEOF) + Track_PeriodIndex - Track_Tick
+    add hl, de
+    set 7, [hl] ; set trigger flag
+    pop hl ; Track_Tick
+    jp .go_next_track
     .order_special:
     ; TODO: implement order commands. Assume $fe for now
     ld a, [de] ; order byte
@@ -1151,8 +1247,14 @@ IncPatternPtr:
     ret
 
 RenderChannel1:
+    ld hl, wTracks + NUM_MUSIC_TRACKS*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Square_DutyCtrl
+    jr z, .10
+    ld l, Track_Square_DutyCtrl + NUM_MUSIC_TRACKS*Track_SIZEOF ; render SFX
+    .10:
     ; NR11
-    ld hl, wTracks + Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
@@ -1165,14 +1267,21 @@ RenderChannel1:
     ldh [rNR11], a
 
     ; NR12
-    ld hl, wTracks + Track_Envelope_Vol
+    ld a, l ; Track_Square_DutyCtrl
+    add a, Track_Envelope_Vol - Track_Square_DutyCtrl
+    ld l, a
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1181,8 +1290,12 @@ RenderChannel1:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1222,6 +1335,9 @@ RenderChannel1:
     dec b
     jr nz, .dec_volume_loop
     .write_nr13:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 0, a
     jr z, .not_muted
@@ -1232,7 +1348,7 @@ RenderChannel1:
     jr .update_square_duty
     .not_muted:
     ; NR13
-    ld hl, wTracks + Track_PeriodLo
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR13], a
     ; NR14
@@ -1246,7 +1362,9 @@ RenderChannel1:
     ldh [rNR14], a
 
     .update_square_duty:
-    ld hl, wTracks + Track_Square_DutyCtrl
+    inc l ; Track_PeriodLo
+    inc l ; Track_PeriodHi
+    inc l ; Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     jr z, .skip_duty_update
@@ -1260,15 +1378,26 @@ RenderChannel1:
     ret
 
 RenderChannel3:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Envelope_Vol + Track_SIZEOF*2
+    jr z, .10
+    ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF ; render SFX
+    .10:
     ; NR32
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*2
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF*2
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1278,6 +1407,7 @@ RenderChannel3:
     ld hl, VolumeTable
     add hl, de
     ld a, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
     ldh [hShadowNR32], a
     swap a
     srl a ; volume in bits 6-5
@@ -1288,6 +1418,9 @@ RenderChannel3:
     xor a, $40 ; 100% or 25% volume
     .write_nr32:
     ldh [rNR32], a
+    ld a, l ; Track_MasterVol
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 2, a
     jr z, .not_muted
@@ -1298,7 +1431,8 @@ RenderChannel3:
     ret
     .not_muted:
     ; NR33
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF*2
+    inc l ; Track_PeriodIndex
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR33], a
     ; NR34
@@ -1313,8 +1447,14 @@ RenderChannel3:
     ret
 
 RenderChannel2:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Square_DutyCtrl + Track_SIZEOF
+    jr z, .10
+    ld l, Track_Square_DutyCtrl + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF ; render SFX
+    .10:
     ; NR21
-    ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     ld a, [hl] ; Track_Square_DutyCtrl
@@ -1327,14 +1467,21 @@ RenderChannel2:
     ldh [rNR21], a
 
     ; NR22
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF
+    ld a, l ; Track_Square_DutyCtrl
+    add a, Track_Envelope_Vol - Track_Square_DutyCtrl
+    ld l, a
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1343,8 +1490,12 @@ RenderChannel2:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1384,6 +1535,9 @@ RenderChannel2:
     dec b
     jr nz, .dec_volume_loop
     .write_nr23:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 1, a
     jr z, .not_muted
@@ -1394,7 +1548,7 @@ RenderChannel2:
     jr .update_square_duty
     .not_muted:
     ; NR23
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ldh [rNR23], a
     ; NR24
@@ -1408,7 +1562,9 @@ RenderChannel2:
     ldh [rNR24], a
 
     .update_square_duty:
-    ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
+    inc l ; Track_PeriodLo
+    inc l ; Track_PeriodHi
+    inc l ; Track_Square_DutyCtrl
     ld a, [hl] ; Track_Square_DutyCtrl
     and a, $03
     jr z, .skip_duty_update
@@ -1422,15 +1578,26 @@ RenderChannel2:
     ret
 
 RenderChannel4:
+    ld hl, wTracks + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF + Track_Speed
+    ld a, [hl] ; Track_Speed
+    cp a, $ff  ; is SFX track used?
+    ld l, Track_Envelope_Vol + Track_SIZEOF*3
+    jr z, .10
+    ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF ; render SFX
+    .10:
     ; NR42
-    ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*3
     ld a, [hl] ; Track_Envelope_Vol
     swap a
     and a, $f
-    ld hl, wTracks + Track_MasterVol + Track_SIZEOF*3
+    push af
+    ld a, l ; Track_Envelope_Vol
+    add a, Track_MasterVol - Track_Envelope_Vol
+    ld l, a ; Track_MasterVol
+    pop af
     or a, [hl] ; Track_MasterVol
     ld e, a
     ld d, 0
+    push hl ; Track_MasterVol
     ld hl, VolumeTable
     add hl, de
     ld b, [hl] ; envelope volume scaled according to track volume (0..F)
@@ -1439,8 +1606,12 @@ RenderChannel4:
     ld e, a
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; computed track volume scaled according to master volume (0..F)
-    ld hl, wTracks + Track_PeriodIndex + Track_SIZEOF*3
+    ld c, [hl] ; computed track volume scaled according to master volume (0..F)
+    pop hl ; Track_MasterVol
+    ld a, l ; Track_MasterVol
+    add a, Track_PeriodIndex - Track_MasterVol
+    ld l, a ; Track_PeriodIndex
+    ld a, c ; computed volume
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .adjust_volume
     ; thanks to https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
@@ -1480,6 +1651,9 @@ RenderChannel4:
     dec b
     jr nz, .dec_volume_loop
     .write_nr43:
+    ld a, l ; Track_PeriodIndex
+    cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
+    jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
     bit 3, a
     jr z, .not_muted
@@ -1490,7 +1664,7 @@ RenderChannel4:
     ret
     .not_muted:
     ; NR43
-    ld hl, wTracks + Track_PeriodLo + Track_SIZEOF*3
+    inc l ; Track_PeriodLo
     ld a, [hli] ; Track_PeriodLo
     ld c, a
     ld a, [hli] ; Track_PeriodHi
@@ -1533,6 +1707,7 @@ dw .end_row       ; 3
 dw .pan_left      ; 4
 dw .pan_center    ; 5
 dw .pan_right     ; 6
+dw .set_global_vol ; 7
 
     .set_instr:
     pop hl ; Track_Pattern_Ptr (lo)
@@ -1661,6 +1836,17 @@ dw .pan_right     ; 6
     set 2, [hl]
     jr .done_panning
 
+.set_global_vol:
+    pop hl ; Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    ld a, [de] ; new global vol (0..F)
+    inc de
+    swap a ; new volume in upper 4 bits
+    ldh [hMasterVol], a
+    call IncPatternPtr
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
 ; A = instrument
 ; preserves DE and HL
 SetInstrument:
@@ -1670,10 +1856,14 @@ SetInstrument:
     sla a
     sla a ; each instrument is 8 bytes long
     ld c, a
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_track
+    ; music track (0-3) - use the song's instrument table
     ldh a, [hInstrumentTable]
     add a, c
     ld e, a
     ldh a, [hInstrumentTable+1]
+    .10:
     adc a, 0
     ld d, a
     ld a, l
@@ -1703,12 +1893,21 @@ SetInstrument:
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ret
+    .is_sfx_track:
+    ld a, LOW(SFXInstrumentTable)
+    add a, c
+    ld e, a
+    ld a, HIGH(SFXInstrumentTable)
+    jr .10
 
 ; A = new speed
 ; preserves DE and HL
 SetSpeed:
     push de
     push hl
+    bit 2, b ; SFX track (4-7)?
+    jr nz, .is_sfx_track
+    ; music track (0-3) - propagate speed to all tracks
     ld hl, wTracks + Track_Speed
     ld de, Track_SIZEOF
     ld [hl], a ; Track_Speed
@@ -1717,10 +1916,24 @@ SetSpeed:
     add hl, de
     ld [hl], a ; Track_Speed
     add hl, de
+    .set_one_track_speed:
     ld [hl], a ; Track_Speed
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     ret
+    .is_sfx_track:
+    ld hl, wTracks + Track_Speed + NUM_MUSIC_TRACKS*Track_SIZEOF
+    ld de, Track_SIZEOF
+    bit 0, b
+    jr z, .skip_add
+    add hl, de
+    .skip_add:
+    bit 1, b
+    jr z, .skip_add_2
+    add hl, de
+    add hl, de
+    .skip_add_2:
+    jr .set_one_track_speed
 
 ; A = effect kind, HL = Track_Effect_Param
 EffectTick:
@@ -1753,8 +1966,17 @@ dw .pulsemod_tick     ; 9
     add a, c
     ld [hli], a ; Track_PeriodLo
     jr nc, .slide_skip_inc
+    ld a, [hl] ; Track_PeriodHi
+    cp a, 7
+    jr z, .clamp_slide_up
     inc [hl] ; Track_PeriodHi
     .slide_skip_inc:
+    pop hl ; Track_Effect_Param
+    ret
+    .clamp_slide_up:
+    dec l ; Track_PeriodLo
+    ld a, $ff
+    ld [hl], a ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 
@@ -1770,8 +1992,16 @@ dw .pulsemod_tick     ; 9
     sub a, c
     ld [hli], a ; Track_PeriodLo
     jr nc, .slide_skip_dec
+    ld a, [hl] ; Track_PeriodHi
+    or a, a
+    jr z, .clamp_slide_down
     dec [hl] ; Track_PeriodHi
     .slide_skip_dec:
+    pop hl ; Track_Effect_Param
+    ret
+    .clamp_slide_down:
+    dec l ; Track_PeriodLo
+    ld [hl], a ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 
@@ -2335,11 +2565,7 @@ GameInit:
     ld bc, GameTilesEnd - GameTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, GameScreenTilemap
     call WriteVramStrings
@@ -2426,6 +2652,284 @@ DrawEmptyProgressBar:
     ld [hli], a
     jp EndVramString
 
+def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $b9
+
+def LANE_HIT_ZONE_HIGHLIGHT_TIMER equ 10
+
+; B = lane index (0-3)
+TriggerLaneHitZoneHighlight:
+    bit 1, b
+    jr nz, .lane_2_or_3
+    bit 0, b
+    ldh a, [hLaneHitZoneHighlightTimers]
+    jr z, .set_lane_0_timer
+    ; lane 1
+    and $0f
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER << 4
+    jr .set_lane_0_or_1_timer
+    .set_lane_0_timer:
+    and $f0
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER
+    .set_lane_0_or_1_timer:
+    ldh [hLaneHitZoneHighlightTimers], a
+    jr DrawLaneHitZoneHighlight
+    .lane_2_or_3:
+    bit 0, b
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    jr z, .set_lane_2_timer
+    ; lane 3
+    and $0f
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER << 4
+    jr .set_lane_2_or_3_timer
+    .set_lane_2_timer:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $f0
+    or LANE_HIT_ZONE_HIGHLIGHT_TIMER
+    .set_lane_2_or_3_timer:
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    ; Fallthrough
+
+; B = lane index (0-3)
+; Destroys: A, D, E, C, HL
+DrawLaneHitZoneHighlight:
+    ; top half
+    ld a, b
+    sla a
+    add a, b
+    add a, $e1
+    ld e, a
+    ld d, $99
+    push de
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 1
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 2
+    ld [hli], a
+    call EndVramString
+    ; bottom half
+    pop de
+    inc d
+    ld a, e
+    and a, $1f
+    ld e, a
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 3
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4
+    ld [hli], a
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 5
+    ld [hli], a
+    jp EndVramString
+
+ProcessLaneHighlights:
+    ; lane 0
+    ldh a, [hLaneHitZoneHighlightTimers]
+    and $0f
+    jr z, .check_lane_1
+    ldh a, [hLaneHitZoneHighlightTimers]
+    dec a
+    ldh [hLaneHitZoneHighlightTimers], a
+    and $0f
+    jr nz, .check_lane_1
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_1:
+    ldh a, [hLaneHitZoneHighlightTimers]
+    and $f0
+    jr z, .check_lane_2
+    ldh a, [hLaneHitZoneHighlightTimers]
+    sub a, $10
+    ldh [hLaneHitZoneHighlightTimers], a
+    and $f0
+    jr nz, .check_lane_2
+    ld a, 1
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_2:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $0f
+    jr z, .check_lane_3
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    dec a
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    and $0f
+    jr nz, .check_lane_3
+    ld a, 2
+    call EraseLaneHitZoneHighlight
+
+    .check_lane_3:
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    and $f0
+    ret z
+    ldh a, [hLaneHitZoneHighlightTimers+1]
+    sub a, $10
+    ldh [hLaneHitZoneHighlightTimers+1], a
+    and $f0
+    ret nz
+    ld a, 3
+    ; Fallthrough
+
+; A = lane index (0-3)
+EraseLaneHitZoneHighlight:
+    ; top half
+    ld e, a
+    sla a
+    add a, e
+    add a, $e1
+    ld e, a
+    ld d, $99
+    push de
+    ld c, $03
+    call BeginVramString
+    ld a, $56
+    ld [hli], a
+    ld a, $56 + 1
+    ld [hli], a
+    ld a, $56 + 2
+    ld [hli], a
+    call EndVramString
+    ; bottom half
+    pop de
+    inc d
+    ld a, e
+    and a, $1f
+    ld e, a
+    ld c, $03
+    call BeginVramString
+    ld a, $5f
+    ld [hli], a
+    ld a, $5f + 1
+    ld [hli], a
+    ld a, $5f + 2
+    ld [hli], a
+    jp EndVramString
+
+def LANE_MISS_TILES_BASE equ $bf
+
+def LANE_MISS_INDICATOR_TIMER equ 14
+
+; B = lane index (0-3)
+TriggerLaneMissIndicator:
+    bit 1, b
+    jr nz, .lane_2_or_3
+    bit 0, b
+    ldh a, [hLaneMissIndicatorTimers]
+    jr z, .set_lane_0_timer
+    ; lane 1
+    and $0f
+    or LANE_MISS_INDICATOR_TIMER << 4
+    jr .set_lane_0_or_1_timer
+    .set_lane_0_timer:
+    and $f0
+    or LANE_MISS_INDICATOR_TIMER
+    .set_lane_0_or_1_timer:
+    ldh [hLaneMissIndicatorTimers], a
+    jr DrawLaneMissIndicator
+    .lane_2_or_3:
+    bit 0, b
+    ldh a, [hLaneMissIndicatorTimers+1]
+    jr z, .set_lane_2_timer
+    ; lane 3
+    and $0f
+    or LANE_MISS_INDICATOR_TIMER << 4
+    jr .set_lane_2_or_3_timer
+    .set_lane_2_timer:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $f0
+    or LANE_MISS_INDICATOR_TIMER
+    .set_lane_2_or_3_timer:
+    ldh [hLaneMissIndicatorTimers+1], a
+    ; Fallthrough
+
+; B = lane index (0-3)
+; Destroys: A, D, E, C, HL
+DrawLaneMissIndicator:
+    ld a, b
+    sla a
+    add a, b
+    add a, $21
+    ld e, a
+    ld d, $9a
+    ld c, $03
+    call BeginVramString
+    ld a, LANE_MISS_TILES_BASE
+    ld [hli], a
+    ld a, LANE_MISS_TILES_BASE + 1
+    ld [hli], a
+    ld a, LANE_MISS_TILES_BASE + 2
+    ld [hli], a
+    jp EndVramString
+
+ProcessLaneMissIndicators:
+    ldh a, [hFrameCounter]
+    and 3
+    ret nz ; process every fourth frame only
+    ; lane 0
+    ldh a, [hLaneMissIndicatorTimers]
+    and $0f
+    jr z, .check_lane_1
+    ldh a, [hLaneMissIndicatorTimers]
+    dec a
+    ldh [hLaneMissIndicatorTimers], a
+    and $0f
+    jr nz, .check_lane_1
+    call EraseLaneMissIndicator
+
+    .check_lane_1:
+    ldh a, [hLaneMissIndicatorTimers]
+    and $f0
+    jr z, .check_lane_2
+    ldh a, [hLaneMissIndicatorTimers]
+    sub a, $10
+    ldh [hLaneMissIndicatorTimers], a
+    and $f0
+    jr nz, .check_lane_2
+    ld a, 1
+    call EraseLaneMissIndicator
+
+    .check_lane_2:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $0f
+    jr z, .check_lane_3
+    ldh a, [hLaneMissIndicatorTimers+1]
+    dec a
+    ldh [hLaneMissIndicatorTimers+1], a
+    and $0f
+    jr nz, .check_lane_3
+    ld a, 2
+    call EraseLaneMissIndicator
+
+    .check_lane_3:
+    ldh a, [hLaneMissIndicatorTimers+1]
+    and $f0
+    ret z
+    ldh a, [hLaneMissIndicatorTimers+1]
+    sub a, $10
+    ldh [hLaneMissIndicatorTimers+1], a
+    and $f0
+    ret nz
+    ld a, 3
+    ; Fallthrough
+
+; A = lane index (0-3)
+EraseLaneMissIndicator:
+    ld e, a
+    sla a
+    add a, e
+    add a, $21
+    ld e, a
+    ld d, $9a
+    ld c, $43
+    call BeginVramString
+    xor a
+    ld [hli], a
+    jp EndVramString
+
+
 ResetGameStats:
     xor a
     ldh [hTapHitCount], a
@@ -2454,6 +2958,7 @@ ResetGameStats:
     ldh [hMaxStreak+1], a
     ret
 
+; Destroys: A
 IncTapHitCount:
     ldh a, [hTapHitCount]
     inc a
@@ -2464,6 +2969,7 @@ IncTapHitCount:
     ldh [hTapHitCount+1], a
     ret
 
+; Destroys: A
 IncTapMissCount:
     ldh a, [hTapMissCount]
     inc a
@@ -2474,6 +2980,7 @@ IncTapMissCount:
     ldh [hTapMissCount+1], a
     ret
 
+; Destroys: A
 IncHoldHeadHitCount:
     ldh a, [hHoldHeadHitCount]
     inc a
@@ -2484,6 +2991,7 @@ IncHoldHeadHitCount:
     ldh [hHoldHeadHitCount+1], a
     ret
 
+; Destroys: A
 IncHoldHeadMissCount:
     ldh a, [hHoldHeadMissCount]
     inc a
@@ -2494,6 +3002,7 @@ IncHoldHeadMissCount:
     ldh [hHoldHeadMissCount+1], a
     ret
 
+; Destroys: A
 IncHoldCompleteCount:
     ldh a, [hHoldCompleteCount]
     inc a
@@ -2504,6 +3013,7 @@ IncHoldCompleteCount:
     ldh [hHoldCompleteCount+1], a
     ret
 
+; Destroys: A
 IncHoldBreakCount:
     ldh a, [hHoldBreakCount]
     inc a
@@ -2514,6 +3024,7 @@ IncHoldBreakCount:
     ldh [hHoldBreakCount+1], a
     ret
 
+; Destroys: A
 IncMisPressCount:
     ldh a, [hMisPressCount]
     inc a
@@ -2602,26 +3113,31 @@ UpdateMaxStreak:
     ret
 
 
+; Destroys: A
 DealTapOrHoldHeadMissDamage:
     ld a, [hl] ; Target_State
     and a, $fc ; extended duration?
     jr nz, DealHoldHeadMissDamage
 
+; Destroys: A
 DealTapMissDamage:
     ldh a, [hHealth]
     sub a, TAP_MISS_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealHoldHeadMissDamage:
     ldh a, [hHealth]
     sub a, HOLD_HEAD_MISS_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealHoldBreakDamage:
     ldh a, [hHealth]
     sub a, HOLD_BREAK_DAMAGE
     jr __SaveHealth
 
+; Destroys: A
 DealMisPressDamage:
     ldh a, [hHealth]
     sub a, MISPRESS_DAMAGE
@@ -2633,8 +3149,10 @@ __SaveHealth:
     xor a
     .no_death:
     ldh [hHealth], a
+    ; TODO: set health changed flag
     ret
 
+; Destroys: A
 RecoverHealth:
     ldh a, [hHealth]
     add a, 1
@@ -2645,6 +3163,7 @@ RecoverHealth:
     .cap_health:
     ld a, HEALTH_MAX
     ldh [hHealth], a
+    ; TODO: set health changed flag
     ret
 
 CheckIfHealthChanged:
@@ -2872,6 +3391,8 @@ dw MainFunc_SongSessionResultsInit ; 8
 dw MainFunc_SongSessionResults ; 9
 dw MainFunc_SongSelectionInit ; 10
 dw MainFunc_SongSelection ; 11
+dw MainFunc_DifficultySelectionInit ; 12
+dw MainFunc_DifficultySelection ; 13
 
 MainFunc_NoOp:
     ret
@@ -2950,11 +3471,7 @@ MainFunc_PlaytestSettingsInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, PlaytestSettingsScreenTilemap
     call WriteVramStrings
@@ -2973,8 +3490,6 @@ MainFunc_PlaytestSettingsInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     ld a, 2
     ldh [hMainState], a ; playtest settings
@@ -3177,15 +3692,23 @@ MainFunc_PlaytestSettings:
     ret
 
     .previousSetting:
+    ld a, 0
+    call PlayTrack0SFX
     jp PreviousPlaytestSetting
 
     .nextSetting:
+    ld a, 0
+    call PlayTrack0SFX
     jp NextPlaytestSetting
 
     .previousValue:
+    ld a, 1
+    call PlayTrack0SFX
     jp PreviousPlaytestSettingValue
 
     .nextValue:
+    ld a, 1
+    call PlayTrack0SFX
     jp NextPlaytestSettingValue
 
     .startPressed:
@@ -3463,6 +3986,157 @@ NextRandomNotesStylePlaytestSetting:
     jp PrintRandomNotesStylePlaytestSetting
 
 
+MainFunc_DifficultySelectionInit:
+    ld a, 2 ; Normal is default
+    ldh [hDifficultyLevel], a ; TODO: remember last selected difficulty per song
+
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+
+    ld hl, DifficultySelectionScreenTilemap
+    call WriteVramStrings
+
+    call PrintCurrentDifficultyLevelIndicator
+    call FlushVramBuffer
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+
+    ld a, 13
+    ldh [hMainState], a ; difficulty selection
+    jp TurnOnLCD
+
+BeginCurrentDifficultyLevelIndicatorVramString:
+    ld d, $02
+    ldh a, [hDifficultyLevel]
+    add a, $63
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 4
+    ld e, a
+    ld c, 1
+    jp BeginVramString
+
+PrintCurrentDifficultyLevelIndicator:
+    call BeginCurrentDifficultyLevelIndicatorVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentDifficultyLevelIndicator:
+    call BeginCurrentDifficultyLevelIndicatorVramString
+    xor a ; blank tile
+    ld [hli], a
+    jp EndVramString
+
+MainFunc_DifficultySelection:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .commit
+    bit PADB_A, a
+    jr nz, .commit
+
+    bit PADB_UP, a
+    jr nz, .previous
+    bit PADB_DOWN, a
+    jr nz, .next
+    bit PADB_SELECT, a
+    jr nz, .next
+    bit PADB_B, a
+    jr nz, .back
+    ret
+
+    .previous:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentDifficultyLevelIndicator
+    ldh a, [hDifficultyLevel]
+    or a
+    jr nz, .noWrapToLast
+    ld a, DIFFICULTY_LEVELS_COUNT
+    .noWrapToLast:
+    dec a
+    ldh [hDifficultyLevel], a
+    jp PrintCurrentDifficultyLevelIndicator
+
+    .next:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentDifficultyLevelIndicator
+    ldh a, [hDifficultyLevel]
+    inc a
+    cp DIFFICULTY_LEVELS_COUNT
+    jr c, .noWrapToFirst
+    xor a
+    .noWrapToFirst:
+    ldh [hDifficultyLevel], a
+    jp PrintCurrentDifficultyLevelIndicator
+
+    .back:
+    ld a, 10
+    ldh [hMainState], a ; song selection init
+    jp TurnOffLCD
+
+    .commit:
+    call InitializeGameplayParametersFromDifficultyLevel
+    ld a, 3
+    ldh [hMainState], a ; game init
+    jp TurnOffLCD
+
+InitializeGameplayParametersFromDifficultyLevel:
+    ldh a, [hDifficultyLevel]
+    sla a
+    ld d, 0
+    ld e, a
+    ld hl, .ParametersByDifficultyLevel
+    add hl, de
+    ld a, [hli]
+    ldh [hGameBehaviorState0], a
+    ld a, GAME_BEHAVIOR_STATE1__MAX_NOTES_PER_CUE ; TODO: make it variable per difficulty level
+    ldh [hGameBehaviorState1], a
+    ld a, [hl]
+    ldh [hIntensityMax], a
+    ret
+.ParametersByDifficultyLevel:
+; Beginner
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+db $10 ; intensity max
+; Easy
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__TAPIFY
+db $30 ; intensity max
+; Normal
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__UNIFORM_DURATION | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__DETERMINISTIC
+db $70 ; intensity max
+; Hard
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__SEEDED
+db $b0 ; intensity max
+; Expert
+db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_ENABLED | GAME_BEHAVIOR_STATE0__RANDOM_MODE__FULL
+db $f0 ; intensity max
+
+
 MainFunc_GameInit:
     call GameInit
 
@@ -3479,6 +4153,8 @@ MainFunc_Gameplay:
     call ProcessHeldTargets
     call ProcessHitTargets
     call ProcessMissedTargets
+    call ProcessLaneHighlights
+    call ProcessLaneMissIndicators
     jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
@@ -3495,6 +4171,7 @@ MainFunc_WaitForAllClear:
     ldh a, [hMissedTargetsHead]
     cp ZILCH_ITEM ; any missed targets?
     ret nz ; exit if so
+    ; TODO: expire any remaining lane highlights and miss indicators
     ld a, 30 ; timer
     ld b, 7 ; game finished
     jp SetTimerWithNextStateTimeout
@@ -4079,7 +4756,7 @@ GetLaneInputsFromButtons:
     jr z, .10
     set 0, b
     .10:
-    bit PADB_RIGHT, a
+    bit PADB_DOWN, a
     jr z, .20
     set 1, b
     .20:
@@ -4101,7 +4778,7 @@ GetLaneInputsFromButtons:
     jr z, .50
     set 0, b
     .50:
-    bit PADB_RIGHT, a
+    bit PADB_DOWN, a
     jr z, .60
     set 1, b
     .60:
@@ -4210,6 +4887,12 @@ ProcessActiveTargets:
     jr .loop
 
     .missed:
+    call HandleMissedTarget
+    jr .loop
+
+
+; HL = pointer to Target_State
+HandleMissedTarget:
     call IncTapOrHoldHeadMissCount
     call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
@@ -4219,12 +4902,20 @@ ProcessActiveTargets:
     or a, 3
     ldh [hSoundStatus], a
 
+; trigger lane miss indicator
+    ld a, [hl] ; Target_State
+    and a, 3 ; lane
+    ld b, a
+    push hl ; Target_State
+    call TriggerLaneMissIndicator
+    pop hl ; Target_State
+
 ; move active target to missed list
     ld a, l
     and a, ~3 ; Target_Next
     ld l, a
-    call MoveActiveTargetToMissedList
-    jr .loop
+    jp MoveActiveTargetToMissedList
+
 
 ; HL = pointer to Target_State
 MoveTarget:
@@ -4426,16 +5117,21 @@ CheckForErrors:
     and a, b
     ldh [hErrorLanes], a
     ret z ; exit if no errors
+    ld b, 0 ; lane index
     .misPressesLoop:
     srl a
+    push af
     jr nc, .10
     ; mis-press in this lane
-    push af
     call IncMisPressCount
     call DealMisPressDamage
-    pop af
+    call TriggerLaneHitZoneHighlight
     .10:
+    inc b ; next lane
+    pop af
     jr nz, .misPressesLoop
+    ld a, 2
+    call PlayTrack0SFX
     jp ResetCurrentStreak
 
 ; ProcessActiveTargets() helper function.
@@ -4939,11 +5635,7 @@ MainFunc_SongSelectionInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, SongSelectionScreenTilemap
     call WriteVramStrings
@@ -4952,8 +5644,6 @@ MainFunc_SongSelectionInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     call PrintCurrentSongSelectionIndicator
 
@@ -4961,7 +5651,7 @@ MainFunc_SongSelectionInit:
     ldh [hMainState], a ; song selection
     jp TurnOnLCD
 
-PrintCurrentSongSelectionIndicator:
+BeginCurrentSongSelectionIndicatorVramString:
     ld d, $99
     ldh a, [hCurrentSong]
     sla a
@@ -4973,24 +5663,16 @@ PrintCurrentSongSelectionIndicator:
     add a, $01
     ld e, a
     ld c, 1
-    call BeginVramString
+    jp BeginVramString
+
+PrintCurrentSongSelectionIndicator:
+    call BeginCurrentSongSelectionIndicatorVramString
     ld a, $26 ; '*'
     ld [hli], a
     jp EndVramString
 
 EraseCurrentSongIndicator:
-    ld d, $99
-    ldh a, [hCurrentSong]
-    sla a
-    sla a
-    sla a
-    sla a
-    sla a
-    sla a
-    add a, $01
-    ld e, a
-    ld c, 1
-    call BeginVramString
+    call BeginCurrentSongSelectionIndicatorVramString
     ld a, 0 ; space
     ld [hli], a
     jp EndVramString
@@ -5010,11 +5692,14 @@ MainFunc_SongSelection:
     ret z
 
     .chooseSong:
-    ld a, 1 ; playtest settings init
+;    ld a, 1 ; playtest settings init
+    ld a, 12 ; difficulty selection init
     ldh [hMainState], a
     jp TurnOffLCD
 
     .previousSong:
+    ld a, 0
+    call PlayTrack0SFX
     call EraseCurrentSongIndicator
     ldh a, [hCurrentSong]
     or a
@@ -5026,6 +5711,8 @@ MainFunc_SongSelection:
     jp PrintCurrentSongSelectionIndicator
 
     .nextSong:
+    ld a, 0
+    call PlayTrack0SFX
     call EraseCurrentSongIndicator
     ldh a, [hCurrentSong]
     inc a
@@ -5049,11 +5736,7 @@ MainFunc_SongSessionResultsInit:
     ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
     call CopyData
 
-    ; Clear tilemap
-    ld e, 0
-    ld hl, $9800
-    ld bc, $240
-    call SetMemory
+    call ClearTilemap
 
     ld hl, SongSessionResultsScreenTilemap
     call WriteVramStrings
@@ -5065,8 +5748,6 @@ MainFunc_SongSessionResultsInit:
 
     ld hl, silent_song
     call StartSong
-    ld a, $f
-    ldh [hSoundStatus], a ; mute all channels
 
     ld a, 9
     ldh [hMainState], a ; song session results
@@ -5588,6 +6269,8 @@ incbin "gamescreentiles.bin"
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
+incbin "hilitehitzonetiles.bin"
+incbin "misstiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
@@ -5595,7 +6278,16 @@ SECTION "VRAM strings", ROM0
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
-db $99, $43, 8, "PARADISE"
+db $99, $43, 10, "MAPLE LEAF"
+db 0
+
+DifficultySelectionScreenTilemap:
+db $98, $65, 11, "DIFFICULTY:"
+db $98, $c6, 8, "BEGINNER"
+db $99, $06, 4, "EASY"
+db $99, $46, 6, "NORMAL"
+db $99, $86, 4, "HARD"
+db $99, $c6, 6, "EXPERT"
 db 0
 
 PlaytestSettingsScreenTilemap:
@@ -5627,16 +6319,52 @@ db 0
 SECTION "Hit cue streams", ROM0
 
 include "whiskeycues.inc"
-include "paradisecues.inc"
+include "maplecues.inc"
 
 SECTION "Song data", ROM0
 
 INCLUDE "whiskeysong.s"
-INCLUDE "paradisesong.s"
+INCLUDE "maplesong.s"
 INCLUDE "silentsong.s"
+
+SECTION "SFX data", ROM0
+
+SFXPatternTable:
+dw SFX0Pattern
+dw SFX1Pattern
+dw SFX2Pattern
+
+SFX0Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b0 ; instrument 0
+db 30 ; period index
+SFX1Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b1 ; instrument 1
+db 20 ; period index
+SFX2Pattern:
+db $02 ; row count
+db $01 ; row status
+db $b2 ; instrument 2
+db 19 ; period index
+
+SFXInstrumentTable:
+dw .env0
+db $00,$02,$20,$18,$00,$00 ; 0
+dw .env0
+db $00,$01,$20,$68,$00,$00 ; 1
+dw .env0
+db $00,$04,$cf,$48,$00,$00 ; 2
+
+.env0:
+db $F0
+db $10,$00,$00
+db $FF,$FF
 
 SECTION "Song descriptors", ROM0
 
 SongDescriptors:
 dw whiskey_cues, whiskey_song
-dw paradise_cues, paradise_song
+dw maple_cues, maple_song

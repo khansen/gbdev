@@ -10,15 +10,18 @@ CHRS = targetsprites.bin \
 	explosionsprites.bin \
 	gamescreentiles.bin \
 	gamescreentilemap.bin \
-	playtestsettingsfont.bin
+	playtestsettingsfont.bin \
+	progressbartiles.bin \
+	hilitehitzonetiles.bin \
+	misstiles.bin
 
 $(PROGRAM).o: main.s \
 	whiskeysong.s \
 	whiskeysong.inc \
 	whiskeycues.inc \
-	paradisesong.s \
-	paradisesong.inc \
-	paradisecues.inc \
+	maplesong.s \
+	maplesong.inc \
+	maplecues.inc \
 	silentsong.s \
 	silentsong.inc \
 	hardware.inc \
@@ -31,11 +34,11 @@ whiskeysong.inc: whiskey.xm whiskey-instruments.txt
 whiskeycues.inc: whiskey.xm
 	xm2cues/xm2cues $< > whiskeycues.inc
 
-paradisesong.inc: paradise.xm paradise-instruments.txt
-	xm2gb --instruments-map=paradise-instruments.txt $< > $@
+maplesong.inc: maple.xm maple-instruments.txt
+	xm2gb --instruments-map=maple-instruments.txt $< > $@
 
-paradisecues.inc: paradise.xm
-	xm2cues/xm2cues $< > paradisecues.inc
+maplecues.inc: maple.xm
+	xm2cues/xm2cues $< > maplecues.inc
 
 silentsong.inc: silent.xm whiskey-instruments.txt
 	xm2gb --instruments-map=whiskey-instruments.txt $< > $@
