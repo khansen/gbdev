@@ -2641,7 +2641,7 @@ InitializeRandom:
     jr nz, .warm
     ret
 
-def PROGRESS_BAR_TILES_BASE equ $b0
+def PROGRESS_BAR_TILES_BASE equ $90
 
 DrawEmptyProgressBar:
     ld de, $9801
@@ -2651,7 +2651,7 @@ DrawEmptyProgressBar:
     ld [hli], a
     jp EndVramString
 
-def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $b9
+def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $99
 
 def LANE_HIT_ZONE_HIGHLIGHT_TIMER equ 10
 
@@ -2784,11 +2784,11 @@ EraseLaneHitZoneHighlight:
     push de
     ld c, $03
     call BeginVramString
-    ld a, $56
+    ld a, $45
     ld [hli], a
-    ld a, $56 + 1
+    ld a, $45 + 1
     ld [hli], a
-    ld a, $56 + 2
+    ld a, $45 + 2
     ld [hli], a
     call EndVramString
     ; bottom half
@@ -2799,15 +2799,15 @@ EraseLaneHitZoneHighlight:
     ld e, a
     ld c, $03
     call BeginVramString
-    ld a, $5f
+    ld a, $48
     ld [hli], a
-    ld a, $5f + 1
+    ld a, $48 + 1
     ld [hli], a
-    ld a, $5f + 2
+    ld a, $48 + 2
     ld [hli], a
     jp EndVramString
 
-def LANE_MISS_TILES_BASE equ $bf
+def LANE_MISS_TILES_BASE equ $9f
 
 def LANE_MISS_INDICATOR_TIMER equ 14
 
@@ -4954,7 +4954,7 @@ DrawTapTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $6c
+    ld a, $4c
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -4964,7 +4964,7 @@ DrawTapTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $6c
+    ld a, $4c
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -5002,7 +5002,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $6e
+    ld a, $4e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5012,7 +5012,7 @@ DrawHoldTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $6e
+    ld a, $4e
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -5032,7 +5032,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $8e
+    ld a, $6e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5048,7 +5048,7 @@ DrawHoldTarget:
     ld [hli], a ; x
     ld a, e ; remaining length
     sla a
-    add a, $6e
+    add a, $4e
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5087,7 +5087,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $90 ; exploded tile base
+    add a, $70 ; exploded tile base
     push af
     ld [hli], a ; tile
     ld a, 0
@@ -6265,6 +6265,7 @@ PlaytestSettingsScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
+db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
