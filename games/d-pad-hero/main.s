@@ -126,7 +126,6 @@ hDifficultyLevel: db
 def DIFFICULTY_LEVELS_COUNT equ 5
 
 ; Playtest settings screen
-hCurrentPlaytestSetting: db
 def PLAYTEST_SETTINGS_COUNT equ 5 ; TODO: 6 (enable max cue notes)
 def PLAYTEST_SETTING__INTENSITY_MAX equ 0
 def PLAYTEST_SETTING__HOLD_NOTES equ 1
@@ -165,6 +164,7 @@ hShadowNR32: db
 hShadowNR42: db
 
 ; bits 3..0: whether channel is muted (1=yes)
+; bit 4: paused (1=yes)
 hSoundStatus: db
 
 ; number of rows to wait before starting playback
@@ -185,6 +185,10 @@ NEXTU ; Printing
     hPrintedAny: ds 1    ; 0/1
     hDigit:      ds 1    ; current digit 0..9
     hU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
+NEXTU ; Playtest settings
+    hCurrentPlaytestSetting: db
+NEXTU ; Pause screen
+    hCurrentPauseMenuItem: db
 ENDU
 
 ; --- End HRAM
@@ -849,6 +853,18 @@ endc
     ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
 
+PauseMusic:
+    ldh a, [hSoundStatus]
+    set 4, a ; set paused bit
+    ldh [hSoundStatus], a
+    ret
+
+UnpauseMusic:
+    ldh a, [hSoundStatus]
+    res 4, a ; clear paused bit
+    ldh [hSoundStatus], a
+    ret
+
 ; A = SFX (pattern) number
 ; Destroys: HL, A
 PlayTrack0SFX:
@@ -909,6 +925,12 @@ UpdateSound:
 ;    call UpdateSampleData
     ld b, 0 ; track index
     ld hl, wTracks; + Track_SIZEOF
+    ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr z, .loop
+    ; only process SFX tracks
+    ld b, NUM_MUSIC_TRACKS
+    ld hl, wTracks + NUM_MUSIC_TRACKS * Track_SIZEOF
     .loop:
     ld a, [hli] ; Track_Speed
     cp a, $ff   ; is track used?
@@ -1356,8 +1378,11 @@ RenderChannel1:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 0, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR13], a
     ld a, $7f
@@ -1439,8 +1464,11 @@ RenderChannel3:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 2, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR33], a
     ld a, $7f
@@ -1556,8 +1584,11 @@ RenderChannel2:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 1, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR23], a
     ld a, $7f
@@ -1672,8 +1703,11 @@ RenderChannel4:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 3, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR43], a
     ld a, $7f
@@ -2571,7 +2605,7 @@ SetupCurrentSong:
     ldh [hSoundPrerollRowsRemaining], a
     ret
 
-GameInit:
+GameGfxInit:
     ; palettes: from dimmed to bright
     ld  a, %00011011
     ldh [hShadowBGP], a
@@ -2585,14 +2619,16 @@ GameInit:
     call ClearTilemap
 
     ld hl, GameScreenTilemap
-    call WriteVramStrings
+    jp WriteVramStrings
 
+GameInit:
+    call GameGfxInit
     call DrawEmptyProgressBar
     call FlushVramBuffer
 
     call SetupCurrentSong
 
-    ld a, HEALTH_MAX
+    ld a, HEALTH_MAX ; TODO: health should persist across sessions
     ldh [hHealth], a
     xor a
     ldh [hHealthChanged], a
@@ -2659,6 +2695,9 @@ InitializeRandom:
     jr nz, .warm
     ret
 
+
+; ------ Progress Bar ------
+
 def PROGRESS_BAR_TILES_BASE equ $90
 
 DrawEmptyProgressBar:
@@ -2668,6 +2707,54 @@ DrawEmptyProgressBar:
     ld a, PROGRESS_BAR_TILES_BASE
     ld [hli], a
     jp EndVramString
+
+DrawEntireProgressBar:
+    ld de, $9801
+    ld c, HIT_CUE_MAX_PROGRESS / 8
+    call BeginVramString
+    ldh a, [hHitCueProgressHi]
+    srl a
+    srl a
+    srl a
+    push af ; save hHitCueProgressHi / 8
+    jr z, .skip_full_blocks
+    ; part 1: full blocks
+    ld c, a
+    ld a, PROGRESS_BAR_TILES_BASE + 8
+    .full_block_loop:
+    ld [hli], a
+    dec c
+    jr nz, .full_block_loop
+    .skip_full_blocks:
+    ; part 2: partial block
+    ldh a, [hHitCueProgressHi]
+    and $07
+    jr z, .skip_partial_block
+    add a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    .skip_partial_block:
+    ; part 3: empty blocks
+    pop af ; hHitCueProgressHi / 8
+    ld c, a
+    ld a, HIT_CUE_MAX_PROGRESS / 8
+    sub a, c
+    jr z, .skip_empty_blocks
+    ld c, a
+    ldh a, [hHitCueProgressHi]
+    and $07
+    ld a, PROGRESS_BAR_TILES_BASE
+    jr z, .empty_block_loop
+    dec c
+    jr z, .skip_empty_blocks
+    .empty_block_loop:
+    ld [hli], a
+    dec c
+    jr nz, .empty_block_loop
+    .skip_empty_blocks:
+    jp EndVramString
+
+
+; ------ Lane Hit Zone Highlights ------
 
 def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $99
 
@@ -2825,8 +2912,10 @@ EraseLaneHitZoneHighlight:
     ld [hli], a
     jp EndVramString
 
-def LANE_MISS_TILES_BASE equ $9f
 
+; ------ Lane Miss Indicators ------
+
+def LANE_MISS_TILES_BASE equ $9f
 def LANE_MISS_INDICATOR_TIMER equ 14
 
 ; B = lane index (0-3)
@@ -2946,6 +3035,8 @@ EraseLaneMissIndicator:
     ld [hli], a
     jp EndVramString
 
+
+; ------ Game Stats ------
 
 ResetGameStats:
     xor a
@@ -3130,6 +3221,8 @@ UpdateMaxStreak:
     ret
 
 
+; ------ Health Management ------
+
 ; Destroys: A
 DealTapOrHoldHeadMissDamage:
     ld a, [hl] ; Target_State
@@ -3193,6 +3286,8 @@ CheckIfHealthChanged:
     ret
 
 
+; ------ Hit Cue Management ------
+
 ; Destroys A, B, C, D, E
 IncHitCueProgress:
     ldh a, [hHitCueProgressLo]
@@ -3254,6 +3349,8 @@ OnPatternRowChange:
     ldh [hHitCueProcessingPending], a
     ret
 
+
+
 ; Builds lookup table of hold timers from speed.
 ; Each entry is (3 * speed) + (n * 4 * speed)
 ; where n = 0, 1, ..., MAX_HOLD_TIMERS - 1
@@ -3273,6 +3370,8 @@ InitializeHoldTimerTable:
     dec b
     jr nz, .loop
     ret
+
+
 
 InitializeTargetLists:
     ld a, ZILCH_ITEM
@@ -3347,6 +3446,7 @@ TickTimer:
     ldh [hTimerLo], a
     ret
 
+
 ; DE = source address
 ; BC = count
 ; HL = destination address
@@ -3372,6 +3472,7 @@ SetMemory:
     jr nz, SetMemory
     ret
 
+
 TurnOnLCD:
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG8000 | LCDCF_BG9800
     ldh [hShadowLCDC], a
@@ -3392,6 +3493,7 @@ TurnOffLCD:
     ; Do NOT write to actual LCDC here - wait for VBlank to do so safely
     ret
 
+
 ; Program main function, called each frame in NMI handler
 GoMainFunction:
     ldh a, [hMainState]
@@ -3410,6 +3512,9 @@ dw MainFunc_SongSelectionInit ; 10
 dw MainFunc_SongSelection ; 11
 dw MainFunc_DifficultySelectionInit ; 12
 dw MainFunc_DifficultySelection ; 13
+dw MainFunc_PauseInit  ; 14
+dw MainFunc_Pause      ; 15
+dw MainFunc_Unpause    ; 16
 
 MainFunc_NoOp:
     ret
@@ -3423,6 +3528,8 @@ MainFunc_Delay_TimerTimeout:
     ldh [hMainState], a
     ret
 
+
+; --- Playtest Settings ---
 
 NEWCHARMAP playtestsettings
 CHARMAP " ", $00
@@ -4003,6 +4110,8 @@ NextRandomNotesStylePlaytestSetting:
     jp PrintRandomNotesStylePlaytestSetting
 
 
+; --- Difficulty Selection ---
+
 MainFunc_DifficultySelectionInit:
     ld a, 2 ; Normal is default
     ldh [hDifficultyLevel], a ; TODO: remember last selected difficulty per song
@@ -4154,6 +4263,145 @@ db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_
 db $f0 ; intensity max
 
 
+; --- Pause Menu ---
+
+MainFunc_PauseInit:
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+
+    ld hl, PauseScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    xor a
+    ldh [hCurrentPauseMenuItem], a
+    call PrintCurrentPauseOptionIndicator
+    call FlushVramBuffer
+
+    ld a, 15 ; pause
+    ldh [hMainState], a
+    jp TurnOnLCD
+
+
+MainFunc_Pause:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .commit
+    bit PADB_A, a
+    jr nz, .commit
+
+    bit PADB_UP, a
+    jr nz, .previous
+    bit PADB_DOWN, a
+    jr nz, .next
+    bit PADB_SELECT, a
+    jr nz, .next
+    ret
+
+    .previous:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentPauseOptionIndicator
+    ldh a, [hCurrentPauseMenuItem]
+    or a
+    jr nz, .noWrapToLast
+    ld a, 3
+    .noWrapToLast:
+    dec a
+    ldh [hCurrentPauseMenuItem], a
+    jp PrintCurrentPauseOptionIndicator
+
+    .next:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentPauseOptionIndicator
+    ldh a, [hCurrentPauseMenuItem]
+    inc a
+    cp 3
+    jr c, .noWrapToFirst
+    xor a
+    .noWrapToFirst:
+    ldh [hCurrentPauseMenuItem], a
+    jp PrintCurrentPauseOptionIndicator
+
+    .commit:
+    ldh a, [hCurrentPauseMenuItem]
+    cp 0
+    jr z, .unpause
+    cp 1
+    jr z, .restart
+    ; 2 - quit to song select
+    ; TODO: ask for confirmation
+    ld a, 10 ; song selection init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .restart:
+    ld a, 3 ; game init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .unpause:
+    ld a, 16 ; unpause
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+MainFunc_Unpause:
+    call GameGfxInit
+    call DrawEntireProgressBar
+    call FlushVramBuffer
+    call UnpauseMusic
+    ld a, 4
+    ldh [hMainState], a ; gameplay
+    jp TurnOnLCD
+
+BeginCurrentPauseOptionIndicatorVramString:
+    ld d, $02
+    ldh a, [hCurrentPauseMenuItem]
+    add a, $63
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 4
+    ld e, a
+    ld c, 1
+    jp BeginVramString
+
+PrintCurrentPauseOptionIndicator:
+    call BeginCurrentPauseOptionIndicatorVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentPauseOptionIndicator:
+    call BeginCurrentPauseOptionIndicatorVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+
+; --- Gameplay ---
+
 MainFunc_GameInit:
     call GameInit
 
@@ -4163,6 +4411,15 @@ MainFunc_GameInit:
     jp TurnOnLCD
 
 MainFunc_Gameplay:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr z, .noPause
+    ; pause the game
+    call PauseMusic
+    ld a, 14 ; pause init
+    ldh [hMainState], a
+    jp TurnOffLCD
+    .noPause:
     call HideAllSprites
     call GetLaneInputsFromButtons
     call ProcessHitCues
@@ -5637,6 +5894,8 @@ RandomDecision:
     jr Prng
 
 
+; --- Song Selection Screen ---
+
 MainFunc_SongSelectionInit:
     xor a
     ldh [hCurrentSong], a
@@ -5740,6 +5999,8 @@ MainFunc_SongSelection:
     ldh [hCurrentSong], a
     jp PrintCurrentSongSelectionIndicator
 
+
+; --- Song Session Results Screen ---
 
 MainFunc_SongSessionResultsInit:
     ; palettes: from bright to dimmed
@@ -6274,6 +6535,12 @@ incbin "misstiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
+
+PauseScreenTilemap:
+db $98, $C6, 6, "RESUME"
+db $99, $06, 7, "RESTART"
+db $99, $46, 4, "QUIT"
+db 0
 
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
