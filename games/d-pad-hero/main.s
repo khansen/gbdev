@@ -172,6 +172,23 @@ hSoundPrerollRowsRemaining: db
 
 ; --- End Sound engine
 
+; Scratch area for various procedures
+
+UNION ; Division
+    hNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
+    hRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
+NEXTU ; Multiplication
+    hMulA:  ds 1
+    hMulHi: ds 1
+    hMulCnt: ds 1
+NEXTU ; Printing
+    hPrintedAny: ds 1    ; 0/1
+    hDigit:      ds 1    ; current digit 0..9
+    hU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
+ENDU
+
+; --- End HRAM
+
 SECTION "WRAM", WRAM0[$c000]
 
 wOam:
@@ -5837,11 +5854,11 @@ ComputeSongSessionAccuracy:
     ld a, 100
     call MulU16xU8 ; hit_notes * 100 -> E:HL
     ld a, l
-    ld [wNum24+0], a
+    ldh [hNum24+0], a
     ld a, h
-    ld [wNum24+1], a
+    ldh [hNum24+1], a
     ld a, e
-    ld [wNum24+2], a
+    ldh [hNum24+2], a
     ldh a, [hSpawnedTargetsCount]
     ld c, a
     ldh a, [hSpawnedTargetsCount+1]
@@ -5900,11 +5917,6 @@ PrintSongSessionResults:
     jp FlushVramBuffer
 
 
-SECTION "MulScratch", WRAM0
-wMulA:   ds 1
-wMulHi:  ds 1
-wMulCnt: ds 1
-
 SECTION "Multiplication", ROM0
 ; ------------------------------------------------------------
 ; MulU16xU8
@@ -5921,63 +5933,58 @@ SECTION "Multiplication", ROM0
 ;   AF, BC, DE, HL
 ; ------------------------------------------------------------
 MulU16xU8:
-    ld [wMulA], a
+    ldh [hMulA], a
 
     xor a
     ld e, a
     ld h, a
     ld l, a
-    ld [wMulHi], a
+    ldh [hMulHi], a
 
     ld a, 8
 .loop:
-    ld [wMulCnt], a
+    ldh [hMulCnt], a
     ; multiplier >>= 1, old bit0 -> carry
-    ld a, [wMulA]
+    ldh a, [hMulA]
     srl a
-    ld [wMulA], a
+    ldh [hMulA], a
     jr nc, .skip_add
 
     add hl, bc
 
-    ; E += wMulHi + carry
-    ld a, [wMulHi]
+    ; E += hMulHi + carry
+    ldh a, [hMulHi]
     ld d, a
     ld a, e
     adc a, d
     ld e, a
 
 .skip_add:
-    ; multiplicand <<= 1 across (wMulHi:BC)
+    ; multiplicand <<= 1 across (hMulHi:BC)
     sla c
     rl  b
-    ld a, [wMulHi]
+    ldh a, [hMulHi]
     rl  a
-    ld [wMulHi], a
+    ldh [hMulHi], a
 
     ; counter--
-    ld a, [wMulCnt]
+    ldh a, [hMulCnt]
     dec a
     jr nz, .loop
     ret
 
 
-SECTION "Division scratch", WRAM0
-
-wNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
-wRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
-
 SECTION "Division", ROM0
 
 ; ------------------------------------------------------------
 ; DivU24ByU16
-;   Unsigned divide: wNum24 / BC
+;   Unsigned divide: hNum24 / BC
 ; IN:
-;   wNum24 = 24-bit numerator (little-endian)
+;   hNum24 = 24-bit numerator (little-endian)
 ;   BC     = 16-bit divisor (BC != 0)
 ; OUT:
 ;   HL     = 16-bit quotient
-;   wRem16 = 16-bit remainder (optional use)
+;   hRem16 = 16-bit remainder (optional use)
 ; CLOBBERS:
 ;   AF, BC, DE, HL
 ; ------------------------------------------------------------
@@ -5986,60 +5993,59 @@ DivU24ByU16:
     ld h, a
     ld l, a              ; quotient = 0
 
-    ld [wRem16+0], a
-    ld [wRem16+1], a     ; remainder = 0
+    ldh [hRem16+0], a
+    ldh [hRem16+1], a     ; remainder = 0
 
     ld d, 24
 .loop:
     ; Shift remainder left by 1
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     sla a
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     rl a
-    ld [wRem16+1], a
+    ld [hRem16+1], a
 
     ; Shift numerator left by 1, MSB goes into carry
-    ; (wNum24 <<= 1), carry after last RL is old bit23
-    ld a, [wNum24+0]
+    ; (hNum24 <<= 1), carry after last RL is old bit23
+    ldh a, [hNum24+0]
     sla a
-    ld [wNum24+0], a
-    ld a, [wNum24+1]
+    ldh [hNum24+0], a
+    ldh a, [hNum24+1]
     rl  a
-    ld [wNum24+1], a
-    ld a, [wNum24+2]
+    ldh [hNum24+1], a
+    ldh a, [hNum24+2]
     rl  a
-    ld [wNum24+2], a     ; carry now holds old bit23
+    ldh [hNum24+2], a     ; carry now holds old bit23
 
     ; Bring that carry bit into remainder LSB
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     adc a, 0             ; add carry
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     adc a, 0
-    ld [wRem16+1], a
+    ldh [hRem16+1], a
 
     ; quotient <<= 1
     add hl, hl
 
     ; if remainder >= divisor: remainder -= divisor; quotient |= 1
-    ld a, [wRem16+1]
+    ldh a, [hRem16+1]
     cp b
     jr c, .no_sub
     jr nz, .do_sub
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     cp c
     jr c, .no_sub
 
 .do_sub:
     ; remainder -= BC
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     sub c
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     sbc b
-    ld [wRem16+1], a
-
+    ldh [hRem16+1], a
     inc l                ; set low bit of quotient
 
 .no_sub:
@@ -6071,13 +6077,6 @@ Pow10_16:
     dw 10
     dw 1
 
-SECTION "Decimal scratch", WRAM0
-
-wPrintedAny: ds 1    ; 0/1
-wDigit:      ds 1    ; current digit 0..9
-
-wU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
-
 ; -------------------------
 ; Output helpers
 ; -------------------------
@@ -6092,15 +6091,15 @@ SECTION "Decimal print", ROM0
 PrintU16Dec_DE:
     ; Store remainder
     ld a, e
-    ld [wU16+0], a
+    ldh [hU16+0], a
     ld a, d
-    ld [wU16+1], a
+    ldh [hU16+1], a
 
     ld de, Pow10_16
     ld b, 5              ; number of places (10^4..10^0)
 
     xor a
-    ld [wPrintedAny], a
+    ldh [hPrintedAny], a
 
 .u16_place_loop:
     push hl ; save output pointer
@@ -6115,15 +6114,15 @@ PrintU16Dec_DE:
     push de ; save Pow10_16 pointer
 
     ; Load current value into D:E
-    ld a, [wU16+0]
+    ldh a, [hU16+0]
     ld e, a
-    ld a, [wU16+1]
+    ldh a, [hU16+1]
     ld d, a
 
     xor a
 
 .u16_sub_loop:
-    ld [wDigit], a
+    ldh [hDigit], a
     ; if (DE < HL) break
     ld a, d
     cp h
@@ -6143,26 +6142,26 @@ PrintU16Dec_DE:
     ld d, a
 
     ; digit++
-    ld a, [wDigit]
+    ldh a, [hDigit]
     inc a
     jr .u16_sub_loop
 
 .u16_digit_done:
     ; Store remainder back
     ld a, e
-    ld [wU16+0], a
+    ldh [hU16+0], a
     ld a, d
-    ld [wU16+1], a
+    ldh [hU16+1], a
 
     pop de ; restore Pow10_16 pointer
     pop hl ; restore output pointer
 
     ; ---- Fixed width: leading SPACES until first non-zero digit,
     ;      but always print at least one digit on last place.
-    ld a, [wDigit]
+    ldh a, [hDigit]
     or a
     jr nz, .u16_fixed_print_digit
-    ld a, [wPrintedAny]
+    ldh a, [hPrintedAny]
     or a
     jr nz, .u16_fixed_print_digit
     ld a, b
@@ -6176,8 +6175,8 @@ PrintU16Dec_DE:
 
 .u16_fixed_print_digit:
     ld a, 1
-    ld [wPrintedAny], a
-    ld a, [wDigit]
+    ldh [hPrintedAny], a
+    ldh a, [hDigit]
     add a, DIGIT_TILE_0
     ld [hli], a
 
@@ -6204,7 +6203,7 @@ PrintU16Dec_DE:
 PrintU8Dec_A:
     ld b, a          ; B = remainder
     xor a
-    ld [wPrintedAny], a
+    ldh [hPrintedAny], a
 
     ld c, 100
     call .PrintDigitU8
@@ -6237,7 +6236,7 @@ PrintU8Dec_A:
     ld a, d
     or a
     jr nz, .print_digit
-    ld a, [wPrintedAny]
+    ld a, [hPrintedAny]
     or a
     jr nz, .print_digit
     ld a, c
@@ -6251,7 +6250,7 @@ PrintU8Dec_A:
 
 .print_digit:
     ld a, 1
-    ld [wPrintedAny], a
+    ld [hPrintedAny], a
     ld a, d
     add a, DIGIT_TILE_0
     ld [hli], a
