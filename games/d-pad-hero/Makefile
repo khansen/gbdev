@@ -13,7 +13,8 @@ CHRS = targetsprites.bin \
 	playtestsettingsfont.bin \
 	progressbartiles.bin \
 	hilitehitzonetiles.bin \
-	misstiles.bin
+	misstiles.bin \
+	healthbartiles.bin
 
 $(PROGRAM).o: main.s \
 	whiskeysong.s \

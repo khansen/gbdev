@@ -2621,16 +2621,17 @@ GameGfxInit:
     jp WriteVramStrings
 
 GameInit:
-    call GameGfxInit
-    call DrawEmptyProgressBar
-    call FlushVramBuffer
-
-    call SetupCurrentSong
-
     ld a, HEALTH_MAX ; TODO: health should persist across sessions
     ldh [hHealth], a
     xor a
     ldh [hHealthChanged], a
+
+    call GameGfxInit
+    call DrawEmptyProgressBar
+    call DrawEntireHealthBar
+    call FlushVramBuffer
+
+    call SetupCurrentSong
 
     call InitializeRandom
 
@@ -2750,6 +2751,124 @@ DrawEntireProgressBar:
     dec c
     jr nz, .empty_block_loop
     .skip_empty_blocks:
+    jp EndVramString
+
+
+; ------ Health Bar ------
+
+def HEALTH_BAR_TILES_BASE equ $a2
+
+; Health (0-100) to bar pixels (0-38)
+; Formula: floor(health * 38 / 100)
+HealthToPixelsTable:
+db 0, 0, 0, 1, 1, 1, 2, 2, 3, 3
+db 3, 4, 4, 4, 5, 5, 6, 6, 6, 7
+db 7, 7, 8, 8, 9, 9, 9, 10, 10, 11
+db 11, 11, 12, 12, 12, 13, 13, 14, 14, 14
+db 15, 15, 15, 16, 16, 17, 17, 17, 18, 18
+db 19, 19, 19, 20, 20, 20, 21, 21, 22, 22
+db 22, 23, 23, 23, 24, 24, 25, 25, 25, 26
+db 26, 26, 27, 27, 28, 28, 28, 29, 29, 30
+db 30, 30, 31, 31, 31, 32, 32, 33, 33, 33
+db 34, 34, 34, 35, 35, 36, 36, 36, 37, 38
+db 38
+
+DrawEntireHealthBar:
+    ; map health to filled pixels
+    ld hl, HealthToPixelsTable
+    ldh a, [hHealth]
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl] ; a = number of filled pixels (0-38)
+    ld b, a
+
+    ld de, $99ee
+    ld c, 5
+    call BeginVramString
+    ; sector 0
+    ld a, b
+    cp 7
+    jr c, .sector_0_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 7
+    jr .sector_0_done
+    .sector_0_partial:
+    add a, HEALTH_BAR_TILES_BASE
+    .sector_0_done:
+    ld [hli], a
+    ; sector 1
+    ld a, b
+    cp 8
+    jr c, .sector_1_empty
+    cp 15
+    jr c, .sector_1_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_1_done
+    .sector_1_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_1_done
+    .sector_1_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_1_done:
+    ld [hli], a
+    ; sector 2
+    ld a, b
+    cp 15
+    jr c, .sector_2_empty
+    cp 23
+    jr c, .sector_2_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_2_done
+    .sector_2_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_2_done
+    .sector_2_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_2_done:
+    ld [hli], a
+    ; sector 3
+    ld a, b
+    cp 23
+    jr c, .sector_3_empty
+    cp 31
+    jr c, .sector_3_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_3_done
+    .sector_3_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_3_done
+    .sector_3_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_3_done:
+    ld [hli], a
+    ; sector 4
+    ld a, b
+    cp 31
+    jr c, .sector_4_empty
+    cp 38
+    jr c, .sector_4_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 24
+    jr .sector_4_done
+    .sector_4_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 17
+    jr .sector_4_done
+    .sector_4_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 17
+    .sector_4_done:
+    ld [hli], a
     jp EndVramString
 
 
@@ -3258,7 +3377,8 @@ __SaveHealth:
     xor a
     .no_death:
     ldh [hHealth], a
-    ; TODO: set health changed flag
+    ld a, 1
+    ldh [hHealthChanged], a
     ret
 
 ; Destroys: A
@@ -3268,21 +3388,38 @@ RecoverHealth:
     cp HEALTH_MAX
     jr nc, .cap_health
     ldh [hHealth], a
+    ld a, 1
+    ldh [hHealthChanged], a
     ret
     .cap_health:
     ld a, HEALTH_MAX
     ldh [hHealth], a
-    ; TODO: set health changed flag
+    ld a, 1
+    ldh [hHealthChanged], a
     ret
 
 CheckIfHealthChanged:
     ldh a, [hHealthChanged]
     or a, a
     ret z
-    ; TODO: handle health change (e.g., update health bar, handle death)
     xor a
     ldh [hHealthChanged], a
-    ret
+    call DrawEntireHealthBar
+    ; TODO: check if portrait should be updated
+    ldh a, [hHealth]
+    or a
+    ret nz ; still alive
+    ; player died - start timer
+    ld a, 180
+    ldh [hTimerLo], a
+    ; mute all music tracks
+    ld a, $f
+    ldh [hSoundStatus], a
+    ; play death sound effect
+    ld a, 3
+    call PlayTrack0SFX
+    ld a, 3
+    jp PlayTrack3SFX
 
 
 ; ------ Hit Cue Management ------
@@ -3514,6 +3651,8 @@ dw MainFunc_DifficultySelection ; 13
 dw MainFunc_PauseInit  ; 14
 dw MainFunc_Pause      ; 15
 dw MainFunc_Unpause    ; 16
+dw MainFunc_GameOverInit ; 17
+dw MainFunc_GameOver   ; 18
 
 MainFunc_NoOp:
     ret
@@ -4359,6 +4498,7 @@ MainFunc_Pause:
 MainFunc_Unpause:
     call GameGfxInit
     call DrawEntireProgressBar
+    call DrawEntireHealthBar
     call FlushVramBuffer
     call UnpauseMusic
     ld a, 4
@@ -4410,17 +4550,36 @@ MainFunc_GameInit:
     jp TurnOnLCD
 
 MainFunc_Gameplay:
+    ldh a, [hHealth]
+    or a
+    jr nz, .is_alive
+    ; player is dead
+    ldh a, [hTimerLo]
+    dec a
+    ldh [hTimerLo], a
+    jr nz, .is_zombie
+    ; timer expired, now it's really the end
+    ld a, 17 ; game over init
+    ldh [hMainState], a
+    jp TurnOffLCD
+    .is_zombie:
+    xor a
+    ldh [hLaneInputPosedge], a
+    ldh [hLaneInput], a
+    jr .do_core_processing
+    .is_alive:
     ldh a, [hButtonsPressed]
     bit PADB_START, a
-    jr z, .noPause
+    jr z, .no_pause
     ; pause the game
     call PauseMusic
     ld a, 14 ; pause init
     ldh [hMainState], a
     jp TurnOffLCD
-    .noPause:
-    call HideAllSprites
+    .no_pause:
     call GetLaneInputsFromButtons
+    .do_core_processing:
+    call HideAllSprites
     call ProcessHitCues
     call ProcessActiveTargets
     call ProcessHeldTargets
@@ -5166,6 +5325,10 @@ ProcessActiveTargets:
 
 ; HL = pointer to Target_State
 HandleMissedTarget:
+    ldh a, [hHealth]
+    or a
+    jr z, .10 ; player is dead, skip some of the processing
+
     call IncTapOrHoldHeadMissCount
     call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
@@ -5183,6 +5346,7 @@ HandleMissedTarget:
     call TriggerLaneMissIndicator
     pop hl ; Target_State
 
+    .10:
 ; move active target to missed list
     ld a, l
     and a, ~3 ; Target_Next
@@ -5717,6 +5881,10 @@ ProcessHeldTargets:
     jr nz, .stillHeld
 
     ; no longer held - move held target to missed list
+    ldh a, [hHealth]
+    or a
+    jr z, .30 ; player is dead, skip some of the processing
+
     call IncHoldBreakCount
     call DealHoldBreakDamage
     call ResetCurrentStreak
@@ -5724,6 +5892,8 @@ ProcessHeldTargets:
     ldh [hSoundStatus], a
     or a, 3
     ldh [hSoundStatus], a
+
+    .30:
     ; clear timer
     xor a
     ld [hl-], a ; Target_HoldTimer
@@ -6177,6 +6347,43 @@ PrintSongSessionResults:
     jp FlushVramBuffer
 
 
+; --- Game over screen ---
+
+MainFunc_GameOverInit:
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+    ld hl, GameOverScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+
+    ld a, 18
+    ldh [hMainState], a ; game over
+    jp TurnOnLCD
+
+MainFunc_GameOver:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    ret z ; start not pressed
+    ; start pressed
+    ld a, 10 ; song selection init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+
 SECTION "Multiplication", ROM0
 ; ------------------------------------------------------------
 ; MulU16xU8
@@ -6531,9 +6738,14 @@ incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
 incbin "hilitehitzonetiles.bin"
 incbin "misstiles.bin"
+incbin "healthbartiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
+
+GameOverScreenTilemap:
+db $99, $05, 9, "GAME OVER"
+db 0
 
 PauseScreenTilemap:
 db $98, $C6, 6, "RESUME"
@@ -6599,6 +6811,7 @@ SFXPatternTable:
 dw SFX0Pattern
 dw SFX1Pattern
 dw SFX2Pattern
+dw SFX3Pattern
 
 SFX0Pattern:
 db $02 ; row count
@@ -6615,6 +6828,18 @@ db $02 ; row count
 db $01 ; row status
 db $b2 ; instrument 2
 db 19 ; period index
+SFX3Pattern:
+db $10 ; row count
+db $11 ; row status
+db $b3 ; instrument 3
+db 30  ; period index
+db $d8 ; set volume
+db 30  ; period index
+db $11 ; row status
+db $d4 ; set volume
+db 30  ; period index
+db $d2 ; set volume
+db 30  ; period index
 
 SFXInstrumentTable:
 dw .env0
@@ -6623,10 +6848,16 @@ dw .env0
 db $00,$01,$20,$68,$00,$00 ; 1
 dw .env0
 db $00,$04,$cf,$48,$00,$00 ; 2
+dw .env1
+db $00,$02,$18,$68,$00,$00 ; 3
 
 .env0:
 db $F0
 db $10,$00,$00
+db $FF,$FF
+.env1:
+db $F0
+db $04,$00,$00
 db $FF,$FF
 
 SECTION "Song descriptors", ROM0
