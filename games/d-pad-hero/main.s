@@ -5334,7 +5334,7 @@ HandleMissedTarget:
     call ResetCurrentStreak
 
 ; turn off the square wave channels
-    ldh [hSoundStatus], a
+    ldh a, [hSoundStatus]
     or a, 3
     ldh [hSoundStatus], a
 
@@ -5889,7 +5889,7 @@ ProcessHeldTargets:
     call DealHoldBreakDamage
     call ResetCurrentStreak
     ; turn off the square wave channels
-    ldh [hSoundStatus], a
+    ldh a, [hSoundStatus]
     or a, 3
     ldh [hSoundStatus], a
 
