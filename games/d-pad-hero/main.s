@@ -1361,8 +1361,7 @@ RenderChannel1:
     ld a, $ff
     ldh [rNR13], a
     ld a, $7f
-    ldh [rNR14], a
-    jr .update_square_duty
+    jr .write_nr14
     .not_muted:
     ; NR13
     inc l ; Track_PeriodLo
@@ -1371,6 +1370,7 @@ RenderChannel1:
     ; NR14
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr14:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1444,8 +1444,7 @@ RenderChannel3:
     ld a, $ff
     ldh [rNR33], a
     ld a, $7f
-    ldh [rNR34], a
-    ret
+    jr .write_nr34
     .not_muted:
     ; NR33
     inc l ; Track_PeriodIndex
@@ -1455,6 +1454,7 @@ RenderChannel3:
     ; NR34
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr34:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1561,8 +1561,7 @@ RenderChannel2:
     ld a, $ff
     ldh [rNR23], a
     ld a, $7f
-    ldh [rNR24], a
-    jr .update_square_duty
+    jr .write_nr24
     .not_muted:
     ; NR23
     inc l ; Track_PeriodLo
@@ -1571,6 +1570,7 @@ RenderChannel2:
     ; NR24
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr24:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1677,8 +1677,7 @@ RenderChannel4:
     ld a, $ff
     ldh [rNR43], a
     ld a, $7f
-    ldh [rNR44], a
-    ret
+    jr .write_nr44
     .not_muted:
     ; NR43
     inc l ; Track_PeriodLo
@@ -1705,6 +1704,7 @@ RenderChannel4:
     dec l ; Track_PeriodHi
     dec l ; Track_PeriodLo
     dec l ; Track_PeriodIndex
+    .write_nr44:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
