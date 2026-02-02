@@ -77,6 +77,7 @@ hDrawHoldLength: db
 hSuppressedLanes: db
 hLaneHitZoneHighlightTimers: ds 2
 hLaneMissIndicatorTimers: ds 2
+hPlayerHurtTimer: db
 
 hHealth: db
 hHealthChanged: db
@@ -4498,6 +4499,14 @@ MainFunc_Pause:
 
 MainFunc_Unpause:
     call GameGfxInit
+
+    ; if the player is hurting, draw the hurt face
+    ldh a, [hPlayerHurtTimer]
+    or a
+    jr z, .not_hurt
+    call DrawFace0
+    .not_hurt:
+
     call DrawEntireProgressBar
     call DrawEntireHealthBar
     call FlushVramBuffer
@@ -4588,6 +4597,7 @@ MainFunc_Gameplay:
     call ProcessMissedTargets
     call ProcessLaneHighlights
     call ProcessLaneMissIndicators
+    call ProcessPlayerHurtAnimation
     jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
@@ -5333,6 +5343,7 @@ HandleMissedTarget:
     call IncTapOrHoldHeadMissCount
     call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
+    call TriggerPlayerHurtAnimation
 
 ; turn off the square wave channels
     ldh a, [hSoundStatus]
@@ -5564,6 +5575,7 @@ CheckForErrors:
     call IncMisPressCount
     call DealMisPressDamage
     call TriggerLaneHitZoneHighlight
+    call TriggerPlayerHurtAnimation
     .10:
     inc b ; next lane
     pop af
@@ -5889,6 +5901,7 @@ ProcessHeldTargets:
     call IncHoldBreakCount
     call DealHoldBreakDamage
     call ResetCurrentStreak
+    call TriggerPlayerHurtAnimation
     ; turn off the square wave channels
     ldh a, [hSoundStatus]
     or a, 3
@@ -6063,6 +6076,74 @@ RandomDecision:
     .skipStir:
     jr Prng
 
+
+; --- Portraits ---
+
+def FACE0_TILES_BASE equ $bb
+
+DrawFace0:
+    ld de, $998f
+    ld c, $03
+    call BeginVramString
+    ld a, FACE0_TILES_BASE + 0
+    ld [hli], a
+    ld a, FACE0_TILES_BASE + 1
+    ld [hli], a
+    ld a, FACE0_TILES_BASE + 2
+    ld [hli], a
+    call EndVramString
+    ld de, $99af
+    ld c, $03
+    call BeginVramString
+    ld a, FACE0_TILES_BASE + 3
+    ld [hli], a
+    ld a, FACE0_TILES_BASE + 4
+    ld [hli], a
+    ld a, FACE0_TILES_BASE + 5
+    ld [hli], a
+    jp EndVramString
+
+DrawFace1:
+    ld de, $998f
+    ld c, $03
+    call BeginVramString
+    ld a, $39
+    ld [hli], a
+    ld a, $3a
+    ld [hli], a
+    ld a, $3b
+    ld [hli], a
+    call EndVramString
+    ld de, $99af
+    ld c, $03
+    call BeginVramString
+    ld a, $3d
+    ld [hli], a
+    ld a, $3e
+    ld [hli], a
+    ld a, $3f
+    ld [hli], a
+    jp EndVramString
+
+TriggerPlayerHurtAnimation:
+    push hl
+    call DrawFace0
+    ld a, 30
+    ldh [hPlayerHurtTimer], a
+    pop hl
+    ret
+
+ProcessPlayerHurtAnimation:
+    ldh a, [hHealth]
+    or a
+    ret z ; player is dead, don't process hurt animation
+    ldh a, [hPlayerHurtTimer]
+    or a
+    ret z ; no hurt animation active
+    dec a
+    ldh [hPlayerHurtTimer], a
+    ret nz ; still active
+    jp DrawFace1
 
 ; --- Song Selection Screen ---
 
@@ -6740,6 +6821,7 @@ incbin "progressbartiles.bin"
 incbin "hilitehitzonetiles.bin"
 incbin "misstiles.bin"
 incbin "healthbartiles.bin"
+incbin "face0tiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
