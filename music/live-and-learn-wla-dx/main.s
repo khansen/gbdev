@@ -1420,6 +1420,7 @@ GoPatternCommand:
 .dw .pan_left      ; 4
 .dw .pan_center    ; 5
 .dw .pan_right     ; 6
+.dw .set_global_vol ; 7
 
     .set_instr:
     pop hl ; Pattern_Ptr (lo)
@@ -1549,6 +1550,17 @@ GoPatternCommand:
     set 2, [hl]
     jr .done_panning
 
+.set_global_vol:
+    pop hl ; Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    ld a, [de] ; new global vol (0..F)
+    inc de
+    swap a ; new volume in upper 4 bits
+    ldh [<hMasterVol], a
+    call IncPatternPtr
+    scf ; CF=1 signals keep processing pattern data
+    ret
+
 ; A = instrument
 ; preserves DE and HL
 SetInstrument:
@@ -1642,9 +1654,18 @@ EffectTick:
     add a, c
     ld [hli], a ; PeriodLo
     jr nc, .slide_skip_inc
+    ld a, [hl] ; Track_PeriodHi
+    cp a, 7
+    jr z, .clamp_slide_up
     inc [hl] ; PeriodHi
     .slide_skip_inc:
     pop hl ; Effect_Param
+    ret
+    .clamp_slide_up:
+    dec l ; Track_PeriodLo
+    ld a, $ff
+    ld [hl], a ; Track_PeriodLo
+    pop hl ; Track_Effect_Param
     ret
 
     .slide_down_tick:
@@ -1660,9 +1681,17 @@ EffectTick:
     sub a, c
     ld [hli], a ; PeriodLo
     jr nc, .slide_skip_dec
+    ld a, [hl] ; Track_PeriodHi
+    or a, a
+    jr z, .clamp_slide_down
     dec [hl] ; PeriodHi
     .slide_skip_dec:
     pop hl ; Effect_Param
+    ret
+    .clamp_slide_down:
+    dec l ; Track_PeriodLo
+    ld [hl], a ; Track_PeriodLo
+    pop hl ; Track_Effect_Param
     ret
 
     .portamento_tick:

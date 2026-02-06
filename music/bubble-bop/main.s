@@ -1842,8 +1842,17 @@ dw .pulsemod_tick     ; 9
     add a, c
     ld [hli], a ; Track_PeriodLo
     jr nc, .slide_skip_inc
+    ld a, [hl] ; Track_PeriodHi
+    cp a, 7
+    jr z, .clamp_slide_up
     inc [hl] ; Track_PeriodHi
     .slide_skip_inc:
+    pop hl ; Track_Effect_Param
+    ret
+    .clamp_slide_up:
+    dec l ; Track_PeriodLo
+    ld a, $ff
+    ld [hl], a ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 
@@ -1860,8 +1869,16 @@ dw .pulsemod_tick     ; 9
     sub a, c
     ld [hli], a ; Track_PeriodLo
     jr nc, .slide_skip_dec
+    ld a, [hl] ; Track_PeriodHi
+    or a, a
+    jr z, .clamp_slide_down
     dec [hl] ; Track_PeriodHi
     .slide_skip_dec:
+    pop hl ; Track_Effect_Param
+    ret
+    .clamp_slide_down:
+    dec l ; Track_PeriodLo
+    ld [hl], a ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 

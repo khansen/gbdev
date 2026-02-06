@@ -1089,6 +1089,7 @@ GoPatternCommand:
 .dw .pan_left      ; 4
 .dw .pan_center    ; 5
 .dw .pan_right     ; 6
+.dw .set_global_vol ; 7
 
     .set_instr:
     pop hl ; Pattern_Ptr (lo)
@@ -1151,6 +1152,20 @@ GoPatternCommand:
     .pan_right:
     ; TODO: implement panning
     jr .done_panning
+
+.set_global_vol:
+    pop hl ; Pattern_Ptr (lo)
+    pop de ; pattern data ptr
+    ld a, [de] ; new global vol (0..F)
+    inc de
+    sla a
+    sla a
+    sla a
+    sla a ; new volume in upper 4 bits
+    ld [masterVol], a
+    call IncPatternPtr
+    scf ; CF=1 signals keep processing pattern data
+    ret
 
 ; A = instrument
 ; preserves DE and HL
