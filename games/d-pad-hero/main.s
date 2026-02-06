@@ -1975,8 +1975,7 @@ dw .pulsemod_tick     ; 9
     ret
     .clamp_slide_up:
     dec l ; Track_PeriodLo
-    ld a, $ff
-    ld [hl], a ; Track_PeriodLo
+    ld [hl], $ff ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 

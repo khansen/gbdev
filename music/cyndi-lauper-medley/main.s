@@ -563,8 +563,7 @@ BeginVramString:
     ret
 
 EndVramString:
-    xor a
-    ld [hl], a
+    ld [hl], 0
     ld a, l
     sub a, LOW(wVramBuffer)
     ldh [hVramBufferOffset], a
@@ -728,8 +727,7 @@ UpdateSound:
     inc l ; Track_Pattern_Ptr (hi)
     inc l ; Track_Order_Pos
     .pre_order_loop:
-    ld a, [hl] ; Track_Order_Pos
-    ld c, a
+    ld c, [hl] ; Track_Order_Pos
     ldh a, [hOrder]
     add a, c
     ld e, a
@@ -963,8 +961,7 @@ UpdateSound:
     ld [hl-], a ; Track_Effect_Portamento_TargetPeriodHi
     ld a, d
     ld [hl-], a ; Track_Effect_Portamento_TargetPeriodLo
-    ld a, c
-    ld [hl], a ; Track_Effect_Portamento_Ctrl
+    ld [hl], c ; Track_Effect_Portamento_Ctrl
     pop hl ; Track_Pattern_Ptr (lo)
     dec l ; Track_Pattern_RowStatus
     .mixer_tick:
@@ -1026,8 +1023,7 @@ RenderChannel1:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1123,8 +1119,7 @@ RenderChannel3:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1190,8 +1185,7 @@ RenderChannel2:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1287,8 +1281,7 @@ RenderChannel4:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [hMasterVol]
     or a, b
     ld e, a
@@ -1405,8 +1398,7 @@ dw .set_global_vol ; 7
     push hl
     ld de, Track_Envelope_Hold - Track_Pattern_Ptr
     add hl, de
-    ld a, 1
-    ld [hl], a ; Track_Envelope_Hold
+    ld [hl], 1 ; Track_Envelope_Hold
     pop hl ; Track_Pattern_Ptr (lo)
     pop de ; pattern data ptr
     scf ; CF=1 signals keep processing pattern data
@@ -1613,8 +1605,7 @@ dw .pulsemod_tick     ; 9
 ; slide up by adding slide amount to period value
     pop hl ; Track_Effect_Param
     push hl
-    ld a, [hl] ; Track_Effect_Param
-    ld c, a
+    ld c, [hl] ; Track_Effect_Param
     ld a, l ; Track_Effect_Param
     add a, Track_PeriodLo - Track_Effect_Param
     ld l, a
@@ -1631,8 +1622,7 @@ dw .pulsemod_tick     ; 9
     ret
     .clamp_slide_up:
     dec l ; Track_PeriodLo
-    ld a, $ff
-    ld [hl], a ; Track_PeriodLo
+    ld [hl], $ff ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 
@@ -1640,8 +1630,7 @@ dw .pulsemod_tick     ; 9
 ; slide up by subtracting slide amount from period value
     pop hl ; Track_Effect_Param
     push hl
-    ld a, [hl] ; Track_Effect_Param
-    ld c, a
+    ld c, [hl] ; Track_Effect_Param
     ld a, l ; Track_Effect_Param
     add a, Track_PeriodLo - Track_Effect_Param
     ld l, a
@@ -1903,8 +1892,7 @@ dw .pulsemod_tick     ; 9
     ld a, l ; Track_Effect_Param
     add a, Track_MasterVol - Track_Effect_Param
     ld l, a ; Track_MasterVol
-    xor a, a
-    ld [hl], a ; Track_MasterVol
+    ld [hl], 0 ; Track_MasterVol
     pop hl ; Track_Effect_Param
     ret
 
@@ -1932,8 +1920,7 @@ EnvelopeTick:
     ld e, a
     ld a, [hli] ; Track_Envelope_Ptr (hi)
     ld d, a
-    xor a, a
-    ld [hl], a ; Track_Envelope_Pos = 0
+    ld [hl], 0 ; Track_Envelope_Pos = 0
     .init_vol:
     ; HL = Track_Envelope_Pos
     ld a, [de] ; 1st byte = start volume
@@ -1986,8 +1973,7 @@ EnvelopeTick:
     jr .point_init
     .env_stop:
     pop hl ; Track_Envelope_Phase
-    xor a, a
-    ld [hl], a ; Track_Envelope_Phase
+    ld [hl], 0 ; Track_Envelope_Phase
     ret
 
     .sustain:

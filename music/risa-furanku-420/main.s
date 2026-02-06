@@ -630,8 +630,7 @@ BeginVramString:
     ret
 
 EndVramString:
-    xor a
-    ld [hl], a
+    ld [hl], 0
     ld a, l
     sub a, <wVramBuffer
     ldh [<hVramBufferOffset], a
@@ -1094,8 +1093,7 @@ RenderChannel1:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [<hMasterVol]
     or a, b
     ld e, a
@@ -1191,8 +1189,7 @@ RenderChannel3:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [<hMasterVol]
     or a, b
     ld e, a
@@ -1258,8 +1255,7 @@ RenderChannel2:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [<hMasterVol]
     or a, b
     ld e, a
@@ -1355,8 +1351,7 @@ RenderChannel4:
     ld d, 0
     ld hl, VolumeTable
     add hl, de
-    ld a, [hl] ; envelope volume scaled according to track volume (0..F)
-    ld b, a
+    ld b, [hl] ; envelope volume scaled according to track volume (0..F)
     ldh a, [<hMasterVol]
     or a, b
     ld e, a
@@ -1699,8 +1694,7 @@ EffectTick:
     ret
     .clamp_slide_up:
     dec l ; Track_PeriodLo
-    ld a, $ff
-    ld [hl], a ; Track_PeriodLo
+    ld [hl], $ff ; Track_PeriodLo
     pop hl ; Track_Effect_Param
     ret
 

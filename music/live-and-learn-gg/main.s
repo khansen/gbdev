@@ -303,8 +303,7 @@ BeginVramString:
     ret
 
 EndVramString:
-    xor a
-    ld [hl], a
+    ld [hl], 0
     ld a, l
     sub a, <vramBuffer
     ld [vramBufferOffset], a
