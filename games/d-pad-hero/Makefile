@@ -12,6 +12,7 @@ CHRS = targetsprites.bin \
 	gamescreentilemap.bin \
 	playtestsettingsfont.bin \
 	progressbartiles.bin \
+	hitzonetiles.bin \
 	hilitehitzonetiles.bin \
 	misstiles.bin \
 	healthbartiles.bin \

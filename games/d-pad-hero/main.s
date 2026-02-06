@@ -2619,7 +2619,19 @@ GameGfxInit:
     call ClearTilemap
 
     ld hl, GameScreenTilemap
-    jp WriteVramStrings
+    call WriteVramStrings
+    ; Fallthrough
+
+DrawRegularHitZoneTiles:
+    ld a, 0
+    call EraseLaneHitZoneHighlight
+    ld a, 1
+    call EraseLaneHitZoneHighlight
+    ld a, 2
+    call EraseLaneHitZoneHighlight
+    ld a, 3
+    call EraseLaneHitZoneHighlight
+    jp FlushVramBuffer
 
 GameInit:
     ld a, HEALTH_MAX ; TODO: health should persist across sessions
@@ -2699,7 +2711,7 @@ InitializeRandom:
 
 ; ------ Progress Bar ------
 
-def PROGRESS_BAR_TILES_BASE equ $90
+def PROGRESS_BAR_TILES_BASE equ $8a
 
 DrawEmptyProgressBar:
     ld de, $9801
@@ -2757,7 +2769,7 @@ DrawEntireProgressBar:
 
 ; ------ Health Bar ------
 
-def HEALTH_BAR_TILES_BASE equ $a2
+def HEALTH_BAR_TILES_BASE equ $c6
 
 ; Health (0-100) to bar pixels (0-38)
 ; Formula: floor(health * 38 / 100)
@@ -2875,7 +2887,7 @@ DrawEntireHealthBar:
 
 ; ------ Lane Hit Zone Highlights ------
 
-def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $99
+def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $ab
 
 def LANE_HIT_ZONE_HIGHLIGHT_TIMER equ 10
 
@@ -2926,10 +2938,13 @@ DrawLaneHitZoneHighlight:
     ld c, $03
     call BeginVramString
     ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE
+    add a, b
+    add a, b
+    add a, b
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 1
+    inc a
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 2
+    inc a
     ld [hli], a
     call EndVramString
     ; bottom half
@@ -2940,11 +2955,14 @@ DrawLaneHitZoneHighlight:
     ld e, a
     ld c, $03
     call BeginVramString
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 3
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4*3
+    add a, b
+    add a, b
+    add a, b
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4
+    inc a
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 5
+    inc a
     ld [hli], a
     jp EndVramString
 
@@ -2996,45 +3014,51 @@ ProcessLaneHighlights:
     ld a, 3
     ; Fallthrough
 
+def LANE_HIT_ZONE_REGULAR_TILES_BASE equ $93
+
 ; A = lane index (0-3)
+; Destroys: A, D, E, B, C, HL
 EraseLaneHitZoneHighlight:
-    ; top half
-    ld e, a
+    ld b, a
     sla a
-    add a, e
+    add a, b
+    ld b, a ; lane * 3
+    ; top half
     add a, $e1
     ld e, a
     ld d, $99
     push de
     ld c, $03
     call BeginVramString
-    ld a, $45
+    ld a, LANE_HIT_ZONE_REGULAR_TILES_BASE
+    add a, b
     ld [hli], a
-    ld a, $45 + 1
+    inc a
     ld [hli], a
-    ld a, $45 + 2
+    inc a
     ld [hli], a
     call EndVramString
     ; bottom half
     pop de
-    inc d
+    inc d ; $9a
     ld a, e
     and a, $1f
     ld e, a
     ld c, $03
     call BeginVramString
-    ld a, $48
+    ld a, LANE_HIT_ZONE_REGULAR_TILES_BASE + 4*3
+    add a, b
     ld [hli], a
-    ld a, $48 + 1
+    inc a
     ld [hli], a
-    ld a, $48 + 2
+    inc a
     ld [hli], a
     jp EndVramString
 
 
 ; ------ Lane Miss Indicators ------
 
-def LANE_MISS_TILES_BASE equ $9f
+def LANE_MISS_TILES_BASE equ $c3
 def LANE_MISS_INDICATOR_TIMER equ 14
 
 ; B = lane index (0-3)
@@ -5376,7 +5400,7 @@ MoveTarget:
     dec l ; Target_State
     ret
 
-def TAP_TARGET_TILE equ $4c
+def TAP_TARGET_TILE equ $46
 
 ; HL = pointer to Target_State
 DrawTapTarget:
@@ -5423,7 +5447,7 @@ DrawTapTarget:
     pop hl ; Object_State
     ret
 
-def HOLD_TARGET_TILES_BASE equ $4e
+def HOLD_TARGET_TILES_BASE equ $48
 
 ; HL = pointer to Target_State
 ; hDrawHoldLength = length of hold tail in pixels
@@ -5510,7 +5534,7 @@ DrawHoldTarget:
     pop hl ; Object_State
     ret
 
-def EXPLODED_TARGET_TILES_BASE equ $70
+def EXPLODED_TARGET_TILES_BASE equ $6a
 
 ; HL = pointer to Target_PosY_Frac
 ; Destroys: AF, BC, DE
@@ -6084,7 +6108,7 @@ RandomDecision:
 
 ; --- Portraits ---
 
-def FACE0_TILES_BASE equ $bb
+def FACE0_TILES_BASE equ $df
 
 DrawFace0:
     ld de, $998f
@@ -6823,6 +6847,7 @@ db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
+incbin "hitzonetiles.bin"
 incbin "hilitehitzonetiles.bin"
 incbin "misstiles.bin"
 incbin "healthbartiles.bin"
