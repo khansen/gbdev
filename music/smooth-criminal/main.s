@@ -707,7 +707,7 @@ UpdateSound:
     ld a, [hli] ; Track_Speed
     cp a, $ff   ; is track used?
     jr nz, .process_track
-    ld de, Track_SIZEOF
+    ld de, Track_SIZEOF - 1
     add hl, de
     jp .next_track
     .process_track:

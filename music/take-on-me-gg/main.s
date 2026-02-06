@@ -923,7 +923,7 @@ UpdateSound:
     inc l
     cp a, $ff   ; is track used?
     jr nz, @process_track
-    ld de, _sizeof_Track
+    ld de, _sizeof_Track - 1
     add hl, de
     jp @next_track
     @process_track:
