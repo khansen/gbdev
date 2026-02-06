@@ -5376,6 +5376,8 @@ MoveTarget:
     dec l ; Target_State
     ret
 
+def TAP_TARGET_TILE equ $4c
+
 ; HL = pointer to Target_State
 DrawTapTarget:
     push hl ; Target_State
@@ -5403,7 +5405,7 @@ DrawTapTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $4c
+    ld a, TAP_TARGET_TILE
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5413,13 +5415,15 @@ DrawTapTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $4c
+    ld a, TAP_TARGET_TILE
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
     call EndDrawSprites
     pop hl ; Object_State
     ret
+
+def HOLD_TARGET_TILES_BASE equ $4e
 
 ; HL = pointer to Target_State
 ; hDrawHoldLength = length of hold tail in pixels
@@ -5451,7 +5455,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $4e
+    ld a, HOLD_TARGET_TILES_BASE ; head
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5461,7 +5465,7 @@ DrawHoldTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $4e
+    ld a, HOLD_TARGET_TILES_BASE ; head
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -5481,7 +5485,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $6e
+    ld a, HOLD_TARGET_TILES_BASE + 8*4 ; full segment
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5497,7 +5501,7 @@ DrawHoldTarget:
     ld [hli], a ; x
     ld a, e ; remaining length
     sla a
-    add a, $4e
+    add a, HOLD_TARGET_TILES_BASE
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5505,6 +5509,8 @@ DrawHoldTarget:
     call EndDrawSprites
     pop hl ; Object_State
     ret
+
+def EXPLODED_TARGET_TILES_BASE equ $70
 
 ; HL = pointer to Target_PosY_Frac
 ; Destroys: AF, BC, DE
@@ -5536,7 +5542,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $70 ; exploded tile base
+    add a, EXPLODED_TARGET_TILES_BASE
     push af
     ld [hli], a ; tile
     ld a, 0
