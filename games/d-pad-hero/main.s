@@ -79,8 +79,8 @@ hLaneHitZoneHighlightTimers: ds 2
 hLaneMissIndicatorTimers: ds 2
 hPlayerHurtTimer: db
 
-hHealth: db
-hHealthChanged: db
+hHealth: db ; bit 7: whether health has changed
+hLastRenderedFace: db
 def HEALTH_MAX equ 100
 def TAP_MISS_DAMAGE equ 6
 def HOLD_HEAD_MISS_DAMAGE equ 8
@@ -2634,12 +2634,11 @@ DrawRegularHitZoneTiles:
     jp FlushVramBuffer
 
 GameInit:
-    ld a, HEALTH_MAX ; TODO: health should persist across sessions
+    ld a, 70 ; TODO: health should persist across sessions
     ldh [hHealth], a
-    xor a
-    ldh [hHealthChanged], a
 
     call GameGfxInit
+    call DrawCurrentFace
     call DrawEmptyProgressBar
     call DrawEntireHealthBar
     call FlushVramBuffer
@@ -2790,6 +2789,7 @@ DrawEntireHealthBar:
     ; map health to filled pixels
     ld hl, HealthToPixelsTable
     ldh a, [hHealth]
+    and $7f
     ld c, a
     ld b, 0
     add hl, bc
@@ -3375,24 +3375,28 @@ DealTapOrHoldHeadMissDamage:
 ; Destroys: A
 DealTapMissDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, TAP_MISS_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealHoldHeadMissDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, HOLD_HEAD_MISS_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealHoldBreakDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, HOLD_BREAK_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealMisPressDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, MISPRESS_DAMAGE
     ; fallthrough
 
@@ -3401,36 +3405,33 @@ __SaveHealth:
     ; health dropped to zero or below
     xor a
     .no_death:
+    set 7, a
     ldh [hHealth], a
-    ld a, 1
-    ldh [hHealthChanged], a
     ret
 
 ; Destroys: A
 RecoverHealth:
     ldh a, [hHealth]
+    and $7f
     add a, 1
     cp HEALTH_MAX
     jr nc, .cap_health
+    set 7, a
     ldh [hHealth], a
-    ld a, 1
-    ldh [hHealthChanged], a
     ret
     .cap_health:
-    ld a, HEALTH_MAX
+    ld a, HEALTH_MAX | $80
     ldh [hHealth], a
-    ld a, 1
-    ldh [hHealthChanged], a
     ret
 
 CheckIfHealthChanged:
-    ldh a, [hHealthChanged]
-    or a, a
+    ldh a, [hHealth]
+    bit 7, a
     ret z
-    xor a
-    ldh [hHealthChanged], a
+    res 7, a
+    ldh [hHealth], a
     call DrawEntireHealthBar
-    ; TODO: check if portrait should be updated
+    call DrawFaceIfNeeded
     ldh a, [hHealth]
     or a
     ret nz ; still alive
@@ -4522,14 +4523,7 @@ MainFunc_Pause:
 
 MainFunc_Unpause:
     call GameGfxInit
-
-    ; if the player is hurting, draw the hurt face
-    ldh a, [hPlayerHurtTimer]
-    or a
-    jr z, .not_hurt
-    call DrawFace0
-    .not_hurt:
-
+    call DrawCurrentFace
     call DrawEntireProgressBar
     call DrawEntireHealthBar
     call FlushVramBuffer
@@ -4584,7 +4578,7 @@ MainFunc_GameInit:
 
 MainFunc_Gameplay:
     ldh a, [hHealth]
-    or a
+    and $7f
     jr nz, .is_alive
     ; player is dead
     ldh a, [hTimerLo]
@@ -5360,7 +5354,7 @@ ProcessActiveTargets:
 ; HL = pointer to Target_State
 HandleMissedTarget:
     ldh a, [hHealth]
-    or a
+    and $7f
     jr z, .10 ; player is dead, skip some of the processing
 
     call IncTapOrHoldHeadMissCount
@@ -5924,7 +5918,7 @@ ProcessHeldTargets:
 
     ; no longer held - move held target to missed list
     ldh a, [hHealth]
-    or a
+    and $7f
     jr z, .30 ; player is dead, skip some of the processing
 
     call IncHoldBreakCount
@@ -6108,63 +6102,153 @@ RandomDecision:
 
 ; --- Portraits ---
 
-def FACE0_TILES_BASE equ $df
+DrawCurrentFace:
+    ; if the player is hurting, draw the hurt face
+    ldh a, [hPlayerHurtTimer]
+    or a
+    jr z, .not_hurt
+    jp DrawFace4
+    .not_hurt:
+    jp DrawFaceByHealth
+
+; Returns: A = face index (0..3)
+GetFaceFromHealth:
+    ldh a, [hHealth]
+    and $7f
+    cp 80
+    jr c, .not_face0
+    xor a
+    ret
+    .not_face0:
+    cp 50
+    jr c, .not_face1
+    ld a, 1
+    ret
+    .not_face1:
+    cp 30
+    jr c, .not_face2
+    ld a, 2
+    ret
+    .not_face2:
+    ld a, 3
+    ret
+
+DrawFaceByHealth:
+    call GetFaceFromHealth
+    jp DrawFaceByIndex
+
+DrawFaceIfNeeded:
+    ldh a, [hPlayerHurtTimer]
+    or a
+    ret nz ; when player is hurt, we always want to show the hurt face
+    call GetFaceFromHealth
+    ld c, a
+    ldh a, [hLastRenderedFace]
+    cp c
+    ret z ; already showing the correct face, no need to redraw
+    ld a, c
+    ; Fallthrough
+
+; A = face index (0..3)
+DrawFaceByIndex:
+    ldh [hLastRenderedFace], a
+    or a
+    jr z, DrawFace0
+    dec a
+    jr z, DrawFace1
+    dec a
+    jr z, DrawFace2
+    dec a
+    jr z, DrawFace3
+    jp DrawFace4 ; should never happen, but just in case
+
+def FACE_TILES_BASE equ $df
+
+def FACE_VRAM_ADDR equ $998f
 
 DrawFace0:
-    ld de, $998f
-    ld c, $03
-    call BeginVramString
-    ld a, FACE0_TILES_BASE + 0
-    ld [hli], a
-    ld a, FACE0_TILES_BASE + 1
-    ld [hli], a
-    ld a, FACE0_TILES_BASE + 2
-    ld [hli], a
-    call EndVramString
-    ld de, $99af
-    ld c, $03
-    call BeginVramString
-    ld a, FACE0_TILES_BASE + 3
-    ld [hli], a
-    ld a, FACE0_TILES_BASE + 4
-    ld [hli], a
-    ld a, FACE0_TILES_BASE + 5
-    ld [hli], a
-    jp EndVramString
-
-DrawFace1:
-    ld de, $998f
+    ld de, FACE_VRAM_ADDR
     ld c, $03
     call BeginVramString
     ld a, $39
     ld [hli], a
-    ld a, $3a
+    inc a
     ld [hli], a
-    ld a, $3b
+    inc a
     ld [hli], a
     call EndVramString
-    ld de, $99af
+    ld de, FACE_VRAM_ADDR + 32
     ld c, $03
     call BeginVramString
     ld a, $3d
     ld [hli], a
-    ld a, $3e
+    inc a
     ld [hli], a
-    ld a, $3f
+    inc a
     ld [hli], a
     jp EndVramString
 
+DrawFace1:
+    ld de, .face0UpperString
+    call CopyStringToVramBuffer
+    ld de, .face0LowerString
+    jp CopyStringToVramBuffer
+.face0UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 0, FACE_TILES_BASE + 1, FACE_TILES_BASE + 2
+.face0LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 3, FACE_TILES_BASE + 4, FACE_TILES_BASE + 5
+
+DrawFace2:
+    ld de, .face2UpperString
+    call CopyStringToVramBuffer
+    ld de, .face2LowerString
+    jp CopyStringToVramBuffer
+.face2UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 6, FACE_TILES_BASE + 7, FACE_TILES_BASE + 8
+.face2LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 9, FACE_TILES_BASE + 10, FACE_TILES_BASE + 11
+
+DrawFace3:
+    ld de, .face3UpperString
+    call CopyStringToVramBuffer
+    ld de, .face3LowerString
+    jp CopyStringToVramBuffer
+.face3UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 12, FACE_TILES_BASE + 13, FACE_TILES_BASE + 14
+.face3LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 15, FACE_TILES_BASE + 16, FACE_TILES_BASE + 17
+
+DrawFace4:
+    ld de, .face4UpperString
+    call CopyStringToVramBuffer
+    ld de, .face4LowerString
+    jp CopyStringToVramBuffer
+.face4UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 18, FACE_TILES_BASE + 19, FACE_TILES_BASE + 20
+.face4LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 21, FACE_TILES_BASE + 22, FACE_TILES_BASE + 23
+
+def PLAYER_HURT_DURATION equ 30 ; in frames
+
 TriggerPlayerHurtAnimation:
     push hl
-    call DrawFace0
-    ld a, 30
+    call DrawFace4
+    ld a, PLAYER_HURT_DURATION
     ldh [hPlayerHurtTimer], a
     pop hl
     ret
 
 ProcessPlayerHurtAnimation:
     ldh a, [hHealth]
-    or a
+    and $7f
     ret z ; player is dead, don't process hurt animation
     ldh a, [hPlayerHurtTimer]
     or a
@@ -6172,7 +6256,8 @@ ProcessPlayerHurtAnimation:
     dec a
     ldh [hPlayerHurtTimer], a
     ret nz ; still active
-    jp DrawFace1
+    jp DrawFaceByHealth
+
 
 ; --- Song Selection Screen ---
 
@@ -6851,7 +6936,7 @@ incbin "hitzonetiles.bin"
 incbin "hilitehitzonetiles.bin"
 incbin "misstiles.bin"
 incbin "healthbartiles.bin"
-incbin "face0tiles.bin"
+incbin "facetiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0

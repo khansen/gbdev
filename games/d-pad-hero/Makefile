@@ -16,7 +16,7 @@ CHRS = targetsprites.bin \
 	hilitehitzonetiles.bin \
 	misstiles.bin \
 	healthbartiles.bin \
-	face0tiles.bin
+	facetiles.bin
 
 $(PROGRAM).o: main.s \
 	whiskeysong.s \
