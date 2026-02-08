@@ -25,6 +25,9 @@ $(PROGRAM).o: main.s \
 	maplesong.s \
 	maplesong.inc \
 	maplecues.inc \
+	housesong.s \
+	housesong.inc \
+	housecues.inc \
 	silentsong.s \
 	silentsong.inc \
 	hardware.inc \
@@ -42,6 +45,12 @@ maplesong.inc: maple.xm maple-instruments.txt
 
 maplecues.inc: maple.xm
 	xm2cues/xm2cues $< > maplecues.inc
+
+housesong.inc: house.xm house-instruments.txt
+	xm2gb --instruments-map=house-instruments.txt $< > $@
+
+housecues.inc: house.xm
+	xm2cues/xm2cues $< > housecues.inc
 
 silentsong.inc: silent.xm whiskey-instruments.txt
 	xm2gb --instruments-map=whiskey-instruments.txt $< > $@

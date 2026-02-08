@@ -87,7 +87,7 @@ def HOLD_HEAD_MISS_DAMAGE equ 8
 def HOLD_BREAK_DAMAGE equ 4
 def MISPRESS_DAMAGE equ 2
 
-def SONG_COUNT equ 2
+def SONG_COUNT equ 3
 hCurrentSong: db
 
 ; stats
@@ -2589,6 +2589,8 @@ SetupCurrentSong:
     jr z, .speed_4
     cp 6
     jr z, .speed_6
+    cp 7
+    jr z, .speed_7
     jp Reset ; TODO: adjust according to song speed
     .speed_3:
     ld a, 46
@@ -2601,6 +2603,9 @@ SetupCurrentSong:
     jr .set_preroll_rows
     .speed_5:
     ld a, 28
+    jr .set_preroll_rows
+    .speed_7:
+    ld a, 21
     .set_preroll_rows:
     ldh [hSoundPrerollRowsRemaining], a
     ret
@@ -6955,6 +6960,7 @@ SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
 db $99, $43, 10, "MAPLE LEAF"
+db $99, $83, 5, "HOUSE"
 db 0
 
 DifficultySelectionScreenTilemap:
@@ -6996,11 +7002,13 @@ SECTION "Hit cue streams", ROM0
 
 include "whiskeycues.inc"
 include "maplecues.inc"
+include "housecues.inc"
 
 SECTION "Song data", ROM0
 
 INCLUDE "whiskeysong.s"
 INCLUDE "maplesong.s"
+INCLUDE "housesong.s"
 INCLUDE "silentsong.s"
 
 SECTION "SFX data", ROM0
@@ -7063,3 +7071,4 @@ SECTION "Song descriptors", ROM0
 SongDescriptors:
 dw whiskey_cues, whiskey_song
 dw maple_cues, maple_song
+dw house_cues, house_song
