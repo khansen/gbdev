@@ -77,16 +77,17 @@ hDrawHoldLength: db
 hSuppressedLanes: db
 hLaneHitZoneHighlightTimers: ds 2
 hLaneMissIndicatorTimers: ds 2
+hPlayerHurtTimer: db
 
-hHealth: db
-hHealthChanged: db
+hHealth: db ; bit 7: whether health has changed
+hLastRenderedFace: db
 def HEALTH_MAX equ 100
 def TAP_MISS_DAMAGE equ 6
 def HOLD_HEAD_MISS_DAMAGE equ 8
 def HOLD_BREAK_DAMAGE equ 4
 def MISPRESS_DAMAGE equ 2
 
-def SONG_COUNT equ 2
+def SONG_COUNT equ 3
 hCurrentSong: db
 
 ; stats
@@ -126,7 +127,6 @@ hDifficultyLevel: db
 def DIFFICULTY_LEVELS_COUNT equ 5
 
 ; Playtest settings screen
-hCurrentPlaytestSetting: db
 def PLAYTEST_SETTINGS_COUNT equ 5 ; TODO: 6 (enable max cue notes)
 def PLAYTEST_SETTING__INTENSITY_MAX equ 0
 def PLAYTEST_SETTING__HOLD_NOTES equ 1
@@ -165,12 +165,34 @@ hShadowNR32: db
 hShadowNR42: db
 
 ; bits 3..0: whether channel is muted (1=yes)
+; bit 4: paused (1=yes)
 hSoundStatus: db
 
 ; number of rows to wait before starting playback
 hSoundPrerollRowsRemaining: db
 
 ; --- End Sound engine
+
+; Scratch area for various procedures
+
+UNION ; Division
+    hNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
+    hRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
+NEXTU ; Multiplication
+    hMulA:  ds 1
+    hMulHi: ds 1
+    hMulCnt: ds 1
+NEXTU ; Printing
+    hPrintedAny: ds 1    ; 0/1
+    hDigit:      ds 1    ; current digit 0..9
+    hU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
+NEXTU ; Playtest settings
+    hCurrentPlaytestSetting: db
+NEXTU ; Pause screen
+    hCurrentPauseMenuItem: db
+ENDU
+
+; --- End HRAM
 
 SECTION "WRAM", WRAM0[$c000]
 
@@ -832,6 +854,18 @@ endc
     ldh [hSoundPrerollRowsRemaining], a ; default is to start right away
     ret
 
+PauseMusic:
+    ldh a, [hSoundStatus]
+    set 4, a ; set paused bit
+    ldh [hSoundStatus], a
+    ret
+
+UnpauseMusic:
+    ldh a, [hSoundStatus]
+    res 4, a ; clear paused bit
+    ldh [hSoundStatus], a
+    ret
+
 ; A = SFX (pattern) number
 ; Destroys: HL, A
 PlayTrack0SFX:
@@ -892,6 +926,12 @@ UpdateSound:
 ;    call UpdateSampleData
     ld b, 0 ; track index
     ld hl, wTracks; + Track_SIZEOF
+    ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr z, .loop
+    ; only process SFX tracks
+    ld b, NUM_MUSIC_TRACKS
+    ld hl, wTracks + NUM_MUSIC_TRACKS * Track_SIZEOF
     .loop:
     ld a, [hli] ; Track_Speed
     cp a, $ff   ; is track used?
@@ -1339,13 +1379,15 @@ RenderChannel1:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 0, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR13], a
     ld a, $7f
-    ldh [rNR14], a
-    jr .update_square_duty
+    jr .write_nr14
     .not_muted:
     ; NR13
     inc l ; Track_PeriodLo
@@ -1354,6 +1396,7 @@ RenderChannel1:
     ; NR14
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr14:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1422,13 +1465,15 @@ RenderChannel3:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 2, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR33], a
     ld a, $7f
-    ldh [rNR34], a
-    ret
+    jr .write_nr34
     .not_muted:
     ; NR33
     inc l ; Track_PeriodIndex
@@ -1438,6 +1483,7 @@ RenderChannel3:
     ; NR34
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr34:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1539,13 +1585,15 @@ RenderChannel2:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 1, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR23], a
     ld a, $7f
-    ldh [rNR24], a
-    jr .update_square_duty
+    jr .write_nr24
     .not_muted:
     ; NR23
     inc l ; Track_PeriodLo
@@ -1554,6 +1602,7 @@ RenderChannel2:
     ; NR24
     ld a, [hl-] ; Track_PeriodHi
     dec l ; Track_PeriodIndex
+    .write_nr24:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -1655,13 +1704,15 @@ RenderChannel4:
     cp a, NUM_MUSIC_TRACKS*Track_SIZEOF
     jr nc, .not_muted ; SFX tracks cannot be muted
     ldh a, [hSoundStatus]
+    bit 4, a ; music paused?
+    jr nz, .is_muted
     bit 3, a
     jr z, .not_muted
+    .is_muted:
     ld a, $ff
     ldh [rNR43], a
     ld a, $7f
-    ldh [rNR44], a
-    ret
+    jr .write_nr44
     .not_muted:
     ; NR43
     inc l ; Track_PeriodLo
@@ -1688,6 +1739,7 @@ RenderChannel4:
     dec l ; Track_PeriodHi
     dec l ; Track_PeriodLo
     dec l ; Track_PeriodIndex
+    .write_nr44:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
     or a, $80
@@ -2537,6 +2589,8 @@ SetupCurrentSong:
     jr z, .speed_4
     cp 6
     jr z, .speed_6
+    cp 7
+    jr z, .speed_7
     jp Reset ; TODO: adjust according to song speed
     .speed_3:
     ld a, 46
@@ -2549,11 +2603,14 @@ SetupCurrentSong:
     jr .set_preroll_rows
     .speed_5:
     ld a, 28
+    jr .set_preroll_rows
+    .speed_7:
+    ld a, 21
     .set_preroll_rows:
     ldh [hSoundPrerollRowsRemaining], a
     ret
 
-GameInit:
+GameGfxInit:
     ; palettes: from dimmed to bright
     ld  a, %00011011
     ldh [hShadowBGP], a
@@ -2568,16 +2625,30 @@ GameInit:
 
     ld hl, GameScreenTilemap
     call WriteVramStrings
+    ; Fallthrough
 
+DrawRegularHitZoneTiles:
+    ld a, 0
+    call EraseLaneHitZoneHighlight
+    ld a, 1
+    call EraseLaneHitZoneHighlight
+    ld a, 2
+    call EraseLaneHitZoneHighlight
+    ld a, 3
+    call EraseLaneHitZoneHighlight
+    jp FlushVramBuffer
+
+GameInit:
+    ld a, 70 ; TODO: health should persist across sessions
+    ldh [hHealth], a
+
+    call GameGfxInit
+    call DrawCurrentFace
     call DrawEmptyProgressBar
+    call DrawEntireHealthBar
     call FlushVramBuffer
 
     call SetupCurrentSong
-
-    ld a, HEALTH_MAX
-    ldh [hHealth], a
-    xor a
-    ldh [hHealthChanged], a
 
     call InitializeRandom
 
@@ -2641,7 +2712,10 @@ InitializeRandom:
     jr nz, .warm
     ret
 
-def PROGRESS_BAR_TILES_BASE equ $b0
+
+; ------ Progress Bar ------
+
+def PROGRESS_BAR_TILES_BASE equ $8a
 
 DrawEmptyProgressBar:
     ld de, $9801
@@ -2651,7 +2725,174 @@ DrawEmptyProgressBar:
     ld [hli], a
     jp EndVramString
 
-def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $b9
+DrawEntireProgressBar:
+    ld de, $9801
+    ld c, HIT_CUE_MAX_PROGRESS / 8
+    call BeginVramString
+    ldh a, [hHitCueProgressHi]
+    srl a
+    srl a
+    srl a
+    push af ; save hHitCueProgressHi / 8
+    jr z, .skip_full_blocks
+    ; part 1: full blocks
+    ld c, a
+    ld a, PROGRESS_BAR_TILES_BASE + 8
+    .full_block_loop:
+    ld [hli], a
+    dec c
+    jr nz, .full_block_loop
+    .skip_full_blocks:
+    ; part 2: partial block
+    ldh a, [hHitCueProgressHi]
+    and $07
+    jr z, .skip_partial_block
+    add a, PROGRESS_BAR_TILES_BASE
+    ld [hli], a
+    .skip_partial_block:
+    ; part 3: empty blocks
+    pop af ; hHitCueProgressHi / 8
+    ld c, a
+    ld a, HIT_CUE_MAX_PROGRESS / 8
+    sub a, c
+    jr z, .skip_empty_blocks
+    ld c, a
+    ldh a, [hHitCueProgressHi]
+    and $07
+    ld a, PROGRESS_BAR_TILES_BASE
+    jr z, .empty_block_loop
+    dec c
+    jr z, .skip_empty_blocks
+    .empty_block_loop:
+    ld [hli], a
+    dec c
+    jr nz, .empty_block_loop
+    .skip_empty_blocks:
+    jp EndVramString
+
+
+; ------ Health Bar ------
+
+def HEALTH_BAR_TILES_BASE equ $c6
+
+; Health (0-100) to bar pixels (0-38)
+; Formula: floor(health * 38 / 100)
+HealthToPixelsTable:
+db 0, 0, 0, 1, 1, 1, 2, 2, 3, 3
+db 3, 4, 4, 4, 5, 5, 6, 6, 6, 7
+db 7, 7, 8, 8, 9, 9, 9, 10, 10, 11
+db 11, 11, 12, 12, 12, 13, 13, 14, 14, 14
+db 15, 15, 15, 16, 16, 17, 17, 17, 18, 18
+db 19, 19, 19, 20, 20, 20, 21, 21, 22, 22
+db 22, 23, 23, 23, 24, 24, 25, 25, 25, 26
+db 26, 26, 27, 27, 28, 28, 28, 29, 29, 30
+db 30, 30, 31, 31, 31, 32, 32, 33, 33, 33
+db 34, 34, 34, 35, 35, 36, 36, 36, 37, 38
+db 38
+
+DrawEntireHealthBar:
+    ; map health to filled pixels
+    ld hl, HealthToPixelsTable
+    ldh a, [hHealth]
+    and $7f
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl] ; a = number of filled pixels (0-38)
+    ld b, a
+
+    ld de, $99ee
+    ld c, 5
+    call BeginVramString
+    ; sector 0
+    ld a, b
+    cp 7
+    jr c, .sector_0_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 7
+    jr .sector_0_done
+    .sector_0_partial:
+    add a, HEALTH_BAR_TILES_BASE
+    .sector_0_done:
+    ld [hli], a
+    ; sector 1
+    ld a, b
+    cp 8
+    jr c, .sector_1_empty
+    cp 15
+    jr c, .sector_1_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_1_done
+    .sector_1_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_1_done
+    .sector_1_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_1_done:
+    ld [hli], a
+    ; sector 2
+    ld a, b
+    cp 15
+    jr c, .sector_2_empty
+    cp 23
+    jr c, .sector_2_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_2_done
+    .sector_2_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_2_done
+    .sector_2_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_2_done:
+    ld [hli], a
+    ; sector 3
+    ld a, b
+    cp 23
+    jr c, .sector_3_empty
+    cp 31
+    jr c, .sector_3_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 16
+    jr .sector_3_done
+    .sector_3_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 8
+    jr .sector_3_done
+    .sector_3_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 8
+    .sector_3_done:
+    ld [hli], a
+    ; sector 4
+    ld a, b
+    cp 31
+    jr c, .sector_4_empty
+    cp 38
+    jr c, .sector_4_partial
+    ; full
+    ld a, HEALTH_BAR_TILES_BASE + 24
+    jr .sector_4_done
+    .sector_4_empty:
+    ld a, HEALTH_BAR_TILES_BASE + 17
+    jr .sector_4_done
+    .sector_4_partial:
+    inc a
+    and a, 7
+    add a, HEALTH_BAR_TILES_BASE + 17
+    .sector_4_done:
+    ld [hli], a
+    jp EndVramString
+
+
+; ------ Lane Hit Zone Highlights ------
+
+def LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE equ $ab
 
 def LANE_HIT_ZONE_HIGHLIGHT_TIMER equ 10
 
@@ -2702,10 +2943,13 @@ DrawLaneHitZoneHighlight:
     ld c, $03
     call BeginVramString
     ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE
+    add a, b
+    add a, b
+    add a, b
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 1
+    inc a
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 2
+    inc a
     ld [hli], a
     call EndVramString
     ; bottom half
@@ -2716,11 +2960,14 @@ DrawLaneHitZoneHighlight:
     ld e, a
     ld c, $03
     call BeginVramString
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 3
+    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4*3
+    add a, b
+    add a, b
+    add a, b
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 4
+    inc a
     ld [hli], a
-    ld a, LANE_HIT_ZONE_HIGHLIGHT_TILES_BASE + 5
+    inc a
     ld [hli], a
     jp EndVramString
 
@@ -2772,43 +3019,51 @@ ProcessLaneHighlights:
     ld a, 3
     ; Fallthrough
 
+def LANE_HIT_ZONE_REGULAR_TILES_BASE equ $93
+
 ; A = lane index (0-3)
+; Destroys: A, D, E, B, C, HL
 EraseLaneHitZoneHighlight:
-    ; top half
-    ld e, a
+    ld b, a
     sla a
-    add a, e
+    add a, b
+    ld b, a ; lane * 3
+    ; top half
     add a, $e1
     ld e, a
     ld d, $99
     push de
     ld c, $03
     call BeginVramString
-    ld a, $56
+    ld a, LANE_HIT_ZONE_REGULAR_TILES_BASE
+    add a, b
     ld [hli], a
-    ld a, $56 + 1
+    inc a
     ld [hli], a
-    ld a, $56 + 2
+    inc a
     ld [hli], a
     call EndVramString
     ; bottom half
     pop de
-    inc d
+    inc d ; $9a
     ld a, e
     and a, $1f
     ld e, a
     ld c, $03
     call BeginVramString
-    ld a, $5f
+    ld a, LANE_HIT_ZONE_REGULAR_TILES_BASE + 4*3
+    add a, b
     ld [hli], a
-    ld a, $5f + 1
+    inc a
     ld [hli], a
-    ld a, $5f + 2
+    inc a
     ld [hli], a
     jp EndVramString
 
-def LANE_MISS_TILES_BASE equ $bf
 
+; ------ Lane Miss Indicators ------
+
+def LANE_MISS_TILES_BASE equ $c3
 def LANE_MISS_INDICATOR_TIMER equ 14
 
 ; B = lane index (0-3)
@@ -2928,6 +3183,8 @@ EraseLaneMissIndicator:
     ld [hli], a
     jp EndVramString
 
+
+; ------ Game Stats ------
 
 ResetGameStats:
     xor a
@@ -3112,6 +3369,8 @@ UpdateMaxStreak:
     ret
 
 
+; ------ Health Management ------
+
 ; Destroys: A
 DealTapOrHoldHeadMissDamage:
     ld a, [hl] ; Target_State
@@ -3121,24 +3380,28 @@ DealTapOrHoldHeadMissDamage:
 ; Destroys: A
 DealTapMissDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, TAP_MISS_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealHoldHeadMissDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, HOLD_HEAD_MISS_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealHoldBreakDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, HOLD_BREAK_DAMAGE
     jr __SaveHealth
 
 ; Destroys: A
 DealMisPressDamage:
     ldh a, [hHealth]
+    and $7f
     sub a, MISPRESS_DAMAGE
     ; fallthrough
 
@@ -3147,33 +3410,50 @@ __SaveHealth:
     ; health dropped to zero or below
     xor a
     .no_death:
+    set 7, a
     ldh [hHealth], a
-    ; TODO: set health changed flag
     ret
 
 ; Destroys: A
 RecoverHealth:
     ldh a, [hHealth]
+    and $7f
     add a, 1
     cp HEALTH_MAX
     jr nc, .cap_health
+    set 7, a
     ldh [hHealth], a
     ret
     .cap_health:
-    ld a, HEALTH_MAX
+    ld a, HEALTH_MAX | $80
     ldh [hHealth], a
-    ; TODO: set health changed flag
     ret
 
 CheckIfHealthChanged:
-    ldh a, [hHealthChanged]
-    or a, a
+    ldh a, [hHealth]
+    bit 7, a
     ret z
-    ; TODO: handle health change (e.g., update health bar, handle death)
-    xor a
-    ldh [hHealthChanged], a
-    ret
+    res 7, a
+    ldh [hHealth], a
+    call DrawEntireHealthBar
+    call DrawFaceIfNeeded
+    ldh a, [hHealth]
+    or a
+    ret nz ; still alive
+    ; player died - start timer
+    ld a, 180
+    ldh [hTimerLo], a
+    ; mute all music tracks
+    ld a, $f
+    ldh [hSoundStatus], a
+    ; play death sound effect
+    ld a, 3
+    call PlayTrack0SFX
+    ld a, 3
+    jp PlayTrack3SFX
 
+
+; ------ Hit Cue Management ------
 
 ; Destroys A, B, C, D, E
 IncHitCueProgress:
@@ -3236,6 +3516,8 @@ OnPatternRowChange:
     ldh [hHitCueProcessingPending], a
     ret
 
+
+
 ; Builds lookup table of hold timers from speed.
 ; Each entry is (3 * speed) + (n * 4 * speed)
 ; where n = 0, 1, ..., MAX_HOLD_TIMERS - 1
@@ -3255,6 +3537,8 @@ InitializeHoldTimerTable:
     dec b
     jr nz, .loop
     ret
+
+
 
 InitializeTargetLists:
     ld a, ZILCH_ITEM
@@ -3329,6 +3613,7 @@ TickTimer:
     ldh [hTimerLo], a
     ret
 
+
 ; DE = source address
 ; BC = count
 ; HL = destination address
@@ -3354,6 +3639,7 @@ SetMemory:
     jr nz, SetMemory
     ret
 
+
 TurnOnLCD:
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ16 | LCDCF_BG8000 | LCDCF_BG9800
     ldh [hShadowLCDC], a
@@ -3374,6 +3660,7 @@ TurnOffLCD:
     ; Do NOT write to actual LCDC here - wait for VBlank to do so safely
     ret
 
+
 ; Program main function, called each frame in NMI handler
 GoMainFunction:
     ldh a, [hMainState]
@@ -3392,6 +3679,11 @@ dw MainFunc_SongSelectionInit ; 10
 dw MainFunc_SongSelection ; 11
 dw MainFunc_DifficultySelectionInit ; 12
 dw MainFunc_DifficultySelection ; 13
+dw MainFunc_PauseInit  ; 14
+dw MainFunc_Pause      ; 15
+dw MainFunc_Unpause    ; 16
+dw MainFunc_GameOverInit ; 17
+dw MainFunc_GameOver   ; 18
 
 MainFunc_NoOp:
     ret
@@ -3405,6 +3697,8 @@ MainFunc_Delay_TimerTimeout:
     ldh [hMainState], a
     ret
 
+
+; --- Playtest Settings ---
 
 NEWCHARMAP playtestsettings
 CHARMAP " ", $00
@@ -3985,6 +4279,8 @@ NextRandomNotesStylePlaytestSetting:
     jp PrintRandomNotesStylePlaytestSetting
 
 
+; --- Difficulty Selection ---
+
 MainFunc_DifficultySelectionInit:
     ld a, 2 ; Normal is default
     ldh [hDifficultyLevel], a ; TODO: remember last selected difficulty per song
@@ -4136,6 +4432,147 @@ db GAME_BEHAVIOR_STATE0__HOLD_MODE__RESPECT | GAME_BEHAVIOR_STATE0_MASK__RANDOM_
 db $f0 ; intensity max
 
 
+; --- Pause Menu ---
+
+MainFunc_PauseInit:
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+
+    ld hl, PauseScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    xor a
+    ldh [hCurrentPauseMenuItem], a
+    call PrintCurrentPauseOptionIndicator
+    call FlushVramBuffer
+
+    ld a, 15 ; pause
+    ldh [hMainState], a
+    jp TurnOnLCD
+
+
+MainFunc_Pause:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr nz, .commit
+    bit PADB_A, a
+    jr nz, .commit
+
+    bit PADB_UP, a
+    jr nz, .previous
+    bit PADB_DOWN, a
+    jr nz, .next
+    bit PADB_SELECT, a
+    jr nz, .next
+    ret
+
+    .previous:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentPauseOptionIndicator
+    ldh a, [hCurrentPauseMenuItem]
+    or a
+    jr nz, .noWrapToLast
+    ld a, 3
+    .noWrapToLast:
+    dec a
+    ldh [hCurrentPauseMenuItem], a
+    jp PrintCurrentPauseOptionIndicator
+
+    .next:
+    ld a, 1
+    call PlayTrack0SFX
+    call EraseCurrentPauseOptionIndicator
+    ldh a, [hCurrentPauseMenuItem]
+    inc a
+    cp 3
+    jr c, .noWrapToFirst
+    xor a
+    .noWrapToFirst:
+    ldh [hCurrentPauseMenuItem], a
+    jp PrintCurrentPauseOptionIndicator
+
+    .commit:
+    ldh a, [hCurrentPauseMenuItem]
+    cp 0
+    jr z, .unpause
+    cp 1
+    jr z, .restart
+    ; 2 - quit to song select
+    ; TODO: ask for confirmation
+    ld a, 10 ; song selection init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .restart:
+    ld a, 3 ; game init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+    .unpause:
+    ld a, 16 ; unpause
+    ldh [hMainState], a
+    jp TurnOffLCD
+
+MainFunc_Unpause:
+    call GameGfxInit
+    call DrawCurrentFace
+    call DrawEntireProgressBar
+    call DrawEntireHealthBar
+    call FlushVramBuffer
+    call UnpauseMusic
+    ld a, 4
+    ldh [hMainState], a ; gameplay
+    jp TurnOnLCD
+
+BeginCurrentPauseOptionIndicatorVramString:
+    ld d, $02
+    ldh a, [hCurrentPauseMenuItem]
+    add a, $63
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    sla a
+    rl d
+    or a, 4
+    ld e, a
+    ld c, 1
+    jp BeginVramString
+
+PrintCurrentPauseOptionIndicator:
+    call BeginCurrentPauseOptionIndicatorVramString
+    ld a, $26 ; '*'
+    ld [hli], a
+    jp EndVramString
+
+EraseCurrentPauseOptionIndicator:
+    call BeginCurrentPauseOptionIndicatorVramString
+    ld a, 0 ; space
+    ld [hli], a
+    jp EndVramString
+
+
+; --- Gameplay ---
+
 MainFunc_GameInit:
     call GameInit
 
@@ -4145,8 +4582,36 @@ MainFunc_GameInit:
     jp TurnOnLCD
 
 MainFunc_Gameplay:
-    call HideAllSprites
+    ldh a, [hHealth]
+    and $7f
+    jr nz, .is_alive
+    ; player is dead
+    ldh a, [hTimerLo]
+    dec a
+    ldh [hTimerLo], a
+    jr nz, .is_zombie
+    ; timer expired, now it's really the end
+    ld a, 17 ; game over init
+    ldh [hMainState], a
+    jp TurnOffLCD
+    .is_zombie:
+    xor a
+    ldh [hLaneInputPosedge], a
+    ldh [hLaneInput], a
+    jr .do_core_processing
+    .is_alive:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    jr z, .no_pause
+    ; pause the game
+    call PauseMusic
+    ld a, 14 ; pause init
+    ldh [hMainState], a
+    jp TurnOffLCD
+    .no_pause:
     call GetLaneInputsFromButtons
+    .do_core_processing:
+    call HideAllSprites
     call ProcessHitCues
     call ProcessActiveTargets
     call ProcessHeldTargets
@@ -4154,6 +4619,7 @@ MainFunc_Gameplay:
     call ProcessMissedTargets
     call ProcessLaneHighlights
     call ProcessLaneMissIndicators
+    call ProcessPlayerHurtAnimation
     jp CheckIfHealthChanged
 
 MainFunc_WaitForAllClear:
@@ -4892,12 +5358,17 @@ ProcessActiveTargets:
 
 ; HL = pointer to Target_State
 HandleMissedTarget:
+    ldh a, [hHealth]
+    and $7f
+    jr z, .10 ; player is dead, skip some of the processing
+
     call IncTapOrHoldHeadMissCount
     call DealTapOrHoldHeadMissDamage
     call ResetCurrentStreak
+    call TriggerPlayerHurtAnimation
 
 ; turn off the square wave channels
-    ldh [hSoundStatus], a
+    ldh a, [hSoundStatus]
     or a, 3
     ldh [hSoundStatus], a
 
@@ -4909,6 +5380,7 @@ HandleMissedTarget:
     call TriggerLaneMissIndicator
     pop hl ; Target_State
 
+    .10:
 ; move active target to missed list
     ld a, l
     and a, ~3 ; Target_Next
@@ -4926,6 +5398,8 @@ MoveTarget:
     ld [hl-], a ; Target_PosY_Int
     dec l ; Target_State
     ret
+
+def TAP_TARGET_TILE equ $46
 
 ; HL = pointer to Target_State
 DrawTapTarget:
@@ -4954,7 +5428,7 @@ DrawTapTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $6c
+    ld a, TAP_TARGET_TILE
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -4964,13 +5438,15 @@ DrawTapTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $6c
+    ld a, TAP_TARGET_TILE
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
     call EndDrawSprites
     pop hl ; Object_State
     ret
+
+def HOLD_TARGET_TILES_BASE equ $48
 
 ; HL = pointer to Target_State
 ; hDrawHoldLength = length of hold tail in pixels
@@ -5002,7 +5478,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $6e
+    ld a, HOLD_TARGET_TILES_BASE ; head
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5012,7 +5488,7 @@ DrawHoldTarget:
     ld a, c ; x
     add a, 8
     ld [hli], a ; x
-    ld a, $6e
+    ld a, HOLD_TARGET_TILES_BASE ; head
     ld [hli], a ; tile
     ld a, OAMF_XFLIP
     ld [hli], a  ; attributes
@@ -5032,7 +5508,7 @@ DrawHoldTarget:
     ld [hli], a ; y
     ld a, c ; x
     ld [hli], a ; x
-    ld a, $8e
+    ld a, HOLD_TARGET_TILES_BASE + 8*4 ; full segment
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5048,7 +5524,7 @@ DrawHoldTarget:
     ld [hli], a ; x
     ld a, e ; remaining length
     sla a
-    add a, $6e
+    add a, HOLD_TARGET_TILES_BASE
     ld [hli], a ; tile
     ld a, 0
     ld [hli], a  ; attributes
@@ -5056,6 +5532,8 @@ DrawHoldTarget:
     call EndDrawSprites
     pop hl ; Object_State
     ret
+
+def EXPLODED_TARGET_TILES_BASE equ $6a
 
 ; HL = pointer to Target_PosY_Frac
 ; Destroys: AF, BC, DE
@@ -5087,7 +5565,7 @@ DrawExplodedTarget:
     ld a, [de] ; Target_State
     and $38
     srl a
-    add a, $90 ; exploded tile base
+    add a, EXPLODED_TARGET_TILES_BASE
     push af
     ld [hli], a ; tile
     ld a, 0
@@ -5125,6 +5603,7 @@ CheckForErrors:
     call IncMisPressCount
     call DealMisPressDamage
     call TriggerLaneHitZoneHighlight
+    call TriggerPlayerHurtAnimation
     .10:
     inc b ; next lane
     pop af
@@ -5443,13 +5922,20 @@ ProcessHeldTargets:
     jr nz, .stillHeld
 
     ; no longer held - move held target to missed list
+    ldh a, [hHealth]
+    and $7f
+    jr z, .30 ; player is dead, skip some of the processing
+
     call IncHoldBreakCount
     call DealHoldBreakDamage
     call ResetCurrentStreak
+    call TriggerPlayerHurtAnimation
     ; turn off the square wave channels
-    ldh [hSoundStatus], a
+    ldh a, [hSoundStatus]
     or a, 3
     ldh [hSoundStatus], a
+
+    .30:
     ; clear timer
     xor a
     ld [hl-], a ; Target_HoldTimer
@@ -5619,6 +6105,167 @@ RandomDecision:
     jr Prng
 
 
+; --- Portraits ---
+
+DrawCurrentFace:
+    ; if the player is hurting, draw the hurt face
+    ldh a, [hPlayerHurtTimer]
+    or a
+    jr z, .not_hurt
+    jp DrawFace4
+    .not_hurt:
+    jp DrawFaceByHealth
+
+; Returns: A = face index (0..3)
+GetFaceFromHealth:
+    ldh a, [hHealth]
+    and $7f
+    cp 80
+    jr c, .not_face0
+    xor a
+    ret
+    .not_face0:
+    cp 50
+    jr c, .not_face1
+    ld a, 1
+    ret
+    .not_face1:
+    cp 30
+    jr c, .not_face2
+    ld a, 2
+    ret
+    .not_face2:
+    ld a, 3
+    ret
+
+DrawFaceByHealth:
+    call GetFaceFromHealth
+    jp DrawFaceByIndex
+
+DrawFaceIfNeeded:
+    ldh a, [hPlayerHurtTimer]
+    or a
+    ret nz ; when player is hurt, we always want to show the hurt face
+    call GetFaceFromHealth
+    ld c, a
+    ldh a, [hLastRenderedFace]
+    cp c
+    ret z ; already showing the correct face, no need to redraw
+    ld a, c
+    ; Fallthrough
+
+; A = face index (0..3)
+DrawFaceByIndex:
+    ldh [hLastRenderedFace], a
+    or a
+    jr z, DrawFace0
+    dec a
+    jr z, DrawFace1
+    dec a
+    jr z, DrawFace2
+    dec a
+    jr z, DrawFace3
+    jp DrawFace4 ; should never happen, but just in case
+
+def FACE_TILES_BASE equ $df
+
+def FACE_VRAM_ADDR equ $998f
+
+DrawFace0:
+    ld de, FACE_VRAM_ADDR
+    ld c, $03
+    call BeginVramString
+    ld a, $39
+    ld [hli], a
+    inc a
+    ld [hli], a
+    inc a
+    ld [hli], a
+    call EndVramString
+    ld de, FACE_VRAM_ADDR + 32
+    ld c, $03
+    call BeginVramString
+    ld a, $3d
+    ld [hli], a
+    inc a
+    ld [hli], a
+    inc a
+    ld [hli], a
+    jp EndVramString
+
+DrawFace1:
+    ld de, .face0UpperString
+    call CopyStringToVramBuffer
+    ld de, .face0LowerString
+    jp CopyStringToVramBuffer
+.face0UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 0, FACE_TILES_BASE + 1, FACE_TILES_BASE + 2
+.face0LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 3, FACE_TILES_BASE + 4, FACE_TILES_BASE + 5
+
+DrawFace2:
+    ld de, .face2UpperString
+    call CopyStringToVramBuffer
+    ld de, .face2LowerString
+    jp CopyStringToVramBuffer
+.face2UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 6, FACE_TILES_BASE + 7, FACE_TILES_BASE + 8
+.face2LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 9, FACE_TILES_BASE + 10, FACE_TILES_BASE + 11
+
+DrawFace3:
+    ld de, .face3UpperString
+    call CopyStringToVramBuffer
+    ld de, .face3LowerString
+    jp CopyStringToVramBuffer
+.face3UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 12, FACE_TILES_BASE + 13, FACE_TILES_BASE + 14
+.face3LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 15, FACE_TILES_BASE + 16, FACE_TILES_BASE + 17
+
+DrawFace4:
+    ld de, .face4UpperString
+    call CopyStringToVramBuffer
+    ld de, .face4LowerString
+    jp CopyStringToVramBuffer
+.face4UpperString:
+db HIGH(FACE_VRAM_ADDR), LOW(FACE_VRAM_ADDR), 3
+db FACE_TILES_BASE + 18, FACE_TILES_BASE + 19, FACE_TILES_BASE + 20
+.face4LowerString:
+db HIGH(FACE_VRAM_ADDR + 32), LOW(FACE_VRAM_ADDR + 32), 3
+db FACE_TILES_BASE + 21, FACE_TILES_BASE + 22, FACE_TILES_BASE + 23
+
+def PLAYER_HURT_DURATION equ 30 ; in frames
+
+TriggerPlayerHurtAnimation:
+    push hl
+    call DrawFace4
+    ld a, PLAYER_HURT_DURATION
+    ldh [hPlayerHurtTimer], a
+    pop hl
+    ret
+
+ProcessPlayerHurtAnimation:
+    ldh a, [hHealth]
+    and $7f
+    ret z ; player is dead, don't process hurt animation
+    ldh a, [hPlayerHurtTimer]
+    or a
+    ret z ; no hurt animation active
+    dec a
+    ldh [hPlayerHurtTimer], a
+    ret nz ; still active
+    jp DrawFaceByHealth
+
+
+; --- Song Selection Screen ---
+
 MainFunc_SongSelectionInit:
     xor a
     ldh [hCurrentSong], a
@@ -5722,6 +6369,8 @@ MainFunc_SongSelection:
     ldh [hCurrentSong], a
     jp PrintCurrentSongSelectionIndicator
 
+
+; --- Song Session Results Screen ---
 
 MainFunc_SongSessionResultsInit:
     ; palettes: from bright to dimmed
@@ -5836,11 +6485,11 @@ ComputeSongSessionAccuracy:
     ld a, 100
     call MulU16xU8 ; hit_notes * 100 -> E:HL
     ld a, l
-    ld [wNum24+0], a
+    ldh [hNum24+0], a
     ld a, h
-    ld [wNum24+1], a
+    ldh [hNum24+1], a
     ld a, e
-    ld [wNum24+2], a
+    ldh [hNum24+2], a
     ldh a, [hSpawnedTargetsCount]
     ld c, a
     ldh a, [hSpawnedTargetsCount+1]
@@ -5899,10 +6548,42 @@ PrintSongSessionResults:
     jp FlushVramBuffer
 
 
-SECTION "MulScratch", WRAM0
-wMulA:   ds 1
-wMulHi:  ds 1
-wMulCnt: ds 1
+; --- Game over screen ---
+
+MainFunc_GameOverInit:
+    ; palettes: from bright to dimmed
+    ld  a, %11100100
+    ldh [hShadowBGP], a
+    ldh [hShadowOBP0], a
+
+    ; TODO: use own tiles for this screen
+    ld de, PlaytestSettingsScreenTiles
+    ld hl, $8000
+    ld bc, PlaytestSettingsScreenTilesEnd - PlaytestSettingsScreenTiles
+    call CopyData
+
+    call ClearTilemap
+    ld hl, GameOverScreenTilemap
+    call WriteVramStrings
+
+    call HideAllSprites
+
+    ld hl, silent_song
+    call StartSong
+
+    ld a, 18
+    ldh [hMainState], a ; game over
+    jp TurnOnLCD
+
+MainFunc_GameOver:
+    ldh a, [hButtonsPressed]
+    bit PADB_START, a
+    ret z ; start not pressed
+    ; start pressed
+    ld a, 10 ; song selection init
+    ldh [hMainState], a
+    jp TurnOffLCD
+
 
 SECTION "Multiplication", ROM0
 ; ------------------------------------------------------------
@@ -5920,63 +6601,58 @@ SECTION "Multiplication", ROM0
 ;   AF, BC, DE, HL
 ; ------------------------------------------------------------
 MulU16xU8:
-    ld [wMulA], a
+    ldh [hMulA], a
 
     xor a
     ld e, a
     ld h, a
     ld l, a
-    ld [wMulHi], a
+    ldh [hMulHi], a
 
     ld a, 8
 .loop:
-    ld [wMulCnt], a
+    ldh [hMulCnt], a
     ; multiplier >>= 1, old bit0 -> carry
-    ld a, [wMulA]
+    ldh a, [hMulA]
     srl a
-    ld [wMulA], a
+    ldh [hMulA], a
     jr nc, .skip_add
 
     add hl, bc
 
-    ; E += wMulHi + carry
-    ld a, [wMulHi]
+    ; E += hMulHi + carry
+    ldh a, [hMulHi]
     ld d, a
     ld a, e
     adc a, d
     ld e, a
 
 .skip_add:
-    ; multiplicand <<= 1 across (wMulHi:BC)
+    ; multiplicand <<= 1 across (hMulHi:BC)
     sla c
     rl  b
-    ld a, [wMulHi]
+    ldh a, [hMulHi]
     rl  a
-    ld [wMulHi], a
+    ldh [hMulHi], a
 
     ; counter--
-    ld a, [wMulCnt]
+    ldh a, [hMulCnt]
     dec a
     jr nz, .loop
     ret
 
 
-SECTION "Division scratch", WRAM0
-
-wNum24:  ds 3    ; 24-bit numerator (little-endian: lo,mid,hi)
-wRem16:  ds 2    ; 16-bit remainder (little-endian: lo,hi)
-
 SECTION "Division", ROM0
 
 ; ------------------------------------------------------------
 ; DivU24ByU16
-;   Unsigned divide: wNum24 / BC
+;   Unsigned divide: hNum24 / BC
 ; IN:
-;   wNum24 = 24-bit numerator (little-endian)
+;   hNum24 = 24-bit numerator (little-endian)
 ;   BC     = 16-bit divisor (BC != 0)
 ; OUT:
 ;   HL     = 16-bit quotient
-;   wRem16 = 16-bit remainder (optional use)
+;   hRem16 = 16-bit remainder (optional use)
 ; CLOBBERS:
 ;   AF, BC, DE, HL
 ; ------------------------------------------------------------
@@ -5985,60 +6661,59 @@ DivU24ByU16:
     ld h, a
     ld l, a              ; quotient = 0
 
-    ld [wRem16+0], a
-    ld [wRem16+1], a     ; remainder = 0
+    ldh [hRem16+0], a
+    ldh [hRem16+1], a     ; remainder = 0
 
     ld d, 24
 .loop:
     ; Shift remainder left by 1
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     sla a
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     rl a
-    ld [wRem16+1], a
+    ld [hRem16+1], a
 
     ; Shift numerator left by 1, MSB goes into carry
-    ; (wNum24 <<= 1), carry after last RL is old bit23
-    ld a, [wNum24+0]
+    ; (hNum24 <<= 1), carry after last RL is old bit23
+    ldh a, [hNum24+0]
     sla a
-    ld [wNum24+0], a
-    ld a, [wNum24+1]
+    ldh [hNum24+0], a
+    ldh a, [hNum24+1]
     rl  a
-    ld [wNum24+1], a
-    ld a, [wNum24+2]
+    ldh [hNum24+1], a
+    ldh a, [hNum24+2]
     rl  a
-    ld [wNum24+2], a     ; carry now holds old bit23
+    ldh [hNum24+2], a     ; carry now holds old bit23
 
     ; Bring that carry bit into remainder LSB
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     adc a, 0             ; add carry
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     adc a, 0
-    ld [wRem16+1], a
+    ldh [hRem16+1], a
 
     ; quotient <<= 1
     add hl, hl
 
     ; if remainder >= divisor: remainder -= divisor; quotient |= 1
-    ld a, [wRem16+1]
+    ldh a, [hRem16+1]
     cp b
     jr c, .no_sub
     jr nz, .do_sub
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     cp c
     jr c, .no_sub
 
 .do_sub:
     ; remainder -= BC
-    ld a, [wRem16+0]
+    ldh a, [hRem16+0]
     sub c
-    ld [wRem16+0], a
-    ld a, [wRem16+1]
+    ldh [hRem16+0], a
+    ldh a, [hRem16+1]
     sbc b
-    ld [wRem16+1], a
-
+    ldh [hRem16+1], a
     inc l                ; set low bit of quotient
 
 .no_sub:
@@ -6070,13 +6745,6 @@ Pow10_16:
     dw 10
     dw 1
 
-SECTION "Decimal scratch", WRAM0
-
-wPrintedAny: ds 1    ; 0/1
-wDigit:      ds 1    ; current digit 0..9
-
-wU16:        ds 2    ; current 16-bit remainder (little-endian: lo,hi)
-
 ; -------------------------
 ; Output helpers
 ; -------------------------
@@ -6091,15 +6759,15 @@ SECTION "Decimal print", ROM0
 PrintU16Dec_DE:
     ; Store remainder
     ld a, e
-    ld [wU16+0], a
+    ldh [hU16+0], a
     ld a, d
-    ld [wU16+1], a
+    ldh [hU16+1], a
 
     ld de, Pow10_16
     ld b, 5              ; number of places (10^4..10^0)
 
     xor a
-    ld [wPrintedAny], a
+    ldh [hPrintedAny], a
 
 .u16_place_loop:
     push hl ; save output pointer
@@ -6114,15 +6782,15 @@ PrintU16Dec_DE:
     push de ; save Pow10_16 pointer
 
     ; Load current value into D:E
-    ld a, [wU16+0]
+    ldh a, [hU16+0]
     ld e, a
-    ld a, [wU16+1]
+    ldh a, [hU16+1]
     ld d, a
 
     xor a
 
 .u16_sub_loop:
-    ld [wDigit], a
+    ldh [hDigit], a
     ; if (DE < HL) break
     ld a, d
     cp h
@@ -6142,26 +6810,26 @@ PrintU16Dec_DE:
     ld d, a
 
     ; digit++
-    ld a, [wDigit]
+    ldh a, [hDigit]
     inc a
     jr .u16_sub_loop
 
 .u16_digit_done:
     ; Store remainder back
     ld a, e
-    ld [wU16+0], a
+    ldh [hU16+0], a
     ld a, d
-    ld [wU16+1], a
+    ldh [hU16+1], a
 
     pop de ; restore Pow10_16 pointer
     pop hl ; restore output pointer
 
     ; ---- Fixed width: leading SPACES until first non-zero digit,
     ;      but always print at least one digit on last place.
-    ld a, [wDigit]
+    ldh a, [hDigit]
     or a
     jr nz, .u16_fixed_print_digit
-    ld a, [wPrintedAny]
+    ldh a, [hPrintedAny]
     or a
     jr nz, .u16_fixed_print_digit
     ld a, b
@@ -6175,8 +6843,8 @@ PrintU16Dec_DE:
 
 .u16_fixed_print_digit:
     ld a, 1
-    ld [wPrintedAny], a
-    ld a, [wDigit]
+    ldh [hPrintedAny], a
+    ldh a, [hDigit]
     add a, DIGIT_TILE_0
     ld [hli], a
 
@@ -6203,7 +6871,7 @@ PrintU16Dec_DE:
 PrintU8Dec_A:
     ld b, a          ; B = remainder
     xor a
-    ld [wPrintedAny], a
+    ldh [hPrintedAny], a
 
     ld c, 100
     call .PrintDigitU8
@@ -6236,7 +6904,7 @@ PrintU8Dec_A:
     ld a, d
     or a
     jr nz, .print_digit
-    ld a, [wPrintedAny]
+    ld a, [hPrintedAny]
     or a
     jr nz, .print_digit
     ld a, c
@@ -6250,7 +6918,7 @@ PrintU8Dec_A:
 
 .print_digit:
     ld a, 1
-    ld [wPrintedAny], a
+    ld [hPrintedAny], a
     ld a, d
     add a, DIGIT_TILE_0
     ld [hli], a
@@ -6265,19 +6933,34 @@ PlaytestSettingsScreenTilesEnd:
 
 GameTiles:
 incbin "gamescreentiles.bin"
+db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 incbin "targetsprites.bin"
 incbin "explosionsprites.bin"
 incbin "progressbartiles.bin"
+incbin "hitzonetiles.bin"
 incbin "hilitehitzonetiles.bin"
 incbin "misstiles.bin"
+incbin "healthbartiles.bin"
+incbin "facetiles.bin"
 GameTilesEnd:
 
 SECTION "VRAM strings", ROM0
+
+GameOverScreenTilemap:
+db $99, $05, 9, "GAME OVER"
+db 0
+
+PauseScreenTilemap:
+db $98, $C6, 6, "RESUME"
+db $99, $06, 7, "RESTART"
+db $99, $46, 4, "QUIT"
+db 0
 
 SongSelectionScreenTilemap:
 db $98, $83, 12, "CHOOSE SONG:"
 db $99, $03, 7, "WHISKEY"
 db $99, $43, 10, "MAPLE LEAF"
+db $99, $83, 5, "HOUSE"
 db 0
 
 DifficultySelectionScreenTilemap:
@@ -6319,11 +7002,13 @@ SECTION "Hit cue streams", ROM0
 
 include "whiskeycues.inc"
 include "maplecues.inc"
+include "housecues.inc"
 
 SECTION "Song data", ROM0
 
 INCLUDE "whiskeysong.s"
 INCLUDE "maplesong.s"
+INCLUDE "housesong.s"
 INCLUDE "silentsong.s"
 
 SECTION "SFX data", ROM0
@@ -6332,6 +7017,7 @@ SFXPatternTable:
 dw SFX0Pattern
 dw SFX1Pattern
 dw SFX2Pattern
+dw SFX3Pattern
 
 SFX0Pattern:
 db $02 ; row count
@@ -6348,6 +7034,18 @@ db $02 ; row count
 db $01 ; row status
 db $b2 ; instrument 2
 db 19 ; period index
+SFX3Pattern:
+db $10 ; row count
+db $11 ; row status
+db $b3 ; instrument 3
+db 30  ; period index
+db $d8 ; set volume
+db 30  ; period index
+db $11 ; row status
+db $d4 ; set volume
+db 30  ; period index
+db $d2 ; set volume
+db 30  ; period index
 
 SFXInstrumentTable:
 dw .env0
@@ -6356,10 +7054,16 @@ dw .env0
 db $00,$01,$20,$68,$00,$00 ; 1
 dw .env0
 db $00,$04,$cf,$48,$00,$00 ; 2
+dw .env1
+db $00,$02,$18,$68,$00,$00 ; 3
 
 .env0:
 db $F0
 db $10,$00,$00
+db $FF,$FF
+.env1:
+db $F0
+db $04,$00,$00
 db $FF,$FF
 
 SECTION "Song descriptors", ROM0
@@ -6367,3 +7071,4 @@ SECTION "Song descriptors", ROM0
 SongDescriptors:
 dw whiskey_cues, whiskey_song
 dw maple_cues, maple_song
+dw house_cues, house_song
