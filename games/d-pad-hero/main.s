@@ -615,7 +615,7 @@ FlushVramBuffer:
     xor a
     ldh [hVramBufferOffset], a
     ld hl, wVramBuffer
-    jp WriteVramStrings
+    ; Fallthrough
 
 ; HL = Address of data (zero-terminated)
 WriteVramStrings:
@@ -698,11 +698,11 @@ CopyStringToVramBuffer:
     ld [hli], a
     dec b
     jr nz, .loop
-    jp EndVramString
+    jr EndVramString
     .isRle:
     ld a, [de] ; data
     ld [hli], a
-    jp EndVramString
+    jr EndVramString
 
 ; DE = Address of data
 ; A = number of bytes
@@ -721,7 +721,7 @@ CopyBytesToVramBuffer:
     ld [hli], a
     dec b
     jr nz, .loop
-    jp EndVramString
+    jr EndVramString
 
 HideAllSprites:
     ld hl, wOam
@@ -1038,8 +1038,7 @@ UpdateSound:
     ld a, HIGH(SFXPatternTable)
     adc a, 0
     ld d, a
-    ld a, $ff ; on the next end of pattern, we will satisfy the "end of SFX" condition above
-    ld [hl], a ; Track_Order_Pos
+    ld [hl], $ff ; Track_Order_Pos - on the next end of pattern, we will satisfy the "end of SFX" condition above
     ld a, LOW(SFXPatternTable)
     jr .10
     .is_sfx_end:
@@ -1223,7 +1222,7 @@ UpdateSound:
     ld [hl], a ; Track_Square_DutyCtrl
     pop hl ; Track_Pattern_Ptr (lo)
     dec l ; Track_Pattern_RowStatus
-    jp .mixer_tick
+    jr .mixer_tick
     .init_slide:
     dec l ; Track_PeriodHi
     dec l ; Track_PeriodLo
@@ -2557,7 +2556,7 @@ Genesis:
 
 .InfiniteLoop:
     halt
-    jp .InfiniteLoop
+    jr .InfiniteLoop
 
 
 SetupCurrentSong:
@@ -2574,10 +2573,7 @@ SetupCurrentSong:
     ld a, [hli] ; hit cue stream hi
     ldh [hHitCueStream+1], a
     ld a, [hli] ; song lo
-    push af
-    ld a, [hl]  ; song hi
-    ld h, a
-    pop af
+    ld h, [hl]  ; song hi
     ld l, a
     call StartSong
     ld a, [wTracks + Track_Speed]
@@ -2798,8 +2794,7 @@ DrawEntireHealthBar:
     ld c, a
     ld b, 0
     add hl, bc
-    ld a, [hl] ; a = number of filled pixels (0-38)
-    ld b, a
+    ld b, [hl] ; number of filled pixels (0-38)
 
     ld de, $99ee
     ld c, 5
@@ -4777,10 +4772,7 @@ ProcessHitCues:
     call ReadHitCueStreamBits ; intensity
     pop bc ; restore chord id
     pop hl ; restore metadata ptr
-    sla a
-    sla a
-    sla a
-    sla a
+    swap a
     ld b, a ; intensity << 4
     pop af ; restore lane index
     or a, LOW(wLaneIntensities)
@@ -4801,10 +4793,7 @@ ProcessHitCues:
     ld a, 4
     call ReadHitCueStreamBits ; intensity
     pop bc
-    sla a
-    sla a
-    sla a
-    sla a
+    swap a
     ld b, a ; intensity << 4
     pop af ; restore lane index
     or a, LOW(wLaneIntensities)
@@ -5415,11 +5404,9 @@ DrawTapTarget:
     dec e ; Target_State
     ld a, [de] ; Target_State
     and a, 3 ; lane
-    sla a
-    sla a
-    sla a
-    ld c, a ; lane * 8
-    sla a ; lane * 16 (0, 16, 32, 48)
+    swap a ; lane * 16
+    ld c, a
+    srl a ; lane * 8
     add a, c ; lane * 24
     add a, 20 ; left offset
     ld c, a ; x
@@ -5465,11 +5452,9 @@ DrawHoldTarget:
     dec e ; Target_State
     ld a, [de] ; Target_State
     and a, 3 ; lane
-    sla a
-    sla a
-    sla a
-    ld c, a ; lane * 8
-    sla a ; lane * 16 (0, 16, 32, 48)
+    swap a ; lane * 16
+    ld c, a
+    srl a ; lane * 8
     add a, c ; lane * 24
     add a, 20 ; left offset
     ld c, a ; x
@@ -5549,11 +5534,9 @@ DrawExplodedTarget:
     dec e ; Target_State
     ld a, [de] ; Target_State
     and a, 3 ; lane
-    sla a
-    sla a
-    sla a
-    ld c, a ; lane * 8
-    sla a ; lane * 16 (0, 16, 32, 48)
+    swap a ; lane * 16
+    ld c, a
+    srl a ; lane * 8
     add a, c ; lane * 24
     add a, 20 ; left offset
     ld c, a ; x
@@ -6140,7 +6123,7 @@ GetFaceFromHealth:
 
 DrawFaceByHealth:
     call GetFaceFromHealth
-    jp DrawFaceByIndex
+    jr DrawFaceByIndex
 
 DrawFaceIfNeeded:
     ldh a, [hPlayerHurtTimer]
