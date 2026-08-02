@@ -212,8 +212,30 @@ Migrated standalone projects should:
 - receive a manual listen when aggregate audio comparison reports a meaningful
   difference
 
-The tools under `lib/gb/tools/` build old and current standalone ROMs and
-compare aggregate APU behavior. They compare register-change rates, distinct
-state counts, distinct frequency counts, track speeds when symbols are
-available, and audio RMS ratio. They do not require frame-exact register
-equality.
+Use the historical migration verifier only when comparing this branch to a
+pre-shared-engine baseline:
+
+```sh
+REFERENCE_REF=origin/master ruby lib/gb/tools/verify_standalone_migration.rb
+```
+
+`REFERENCE_REF` is required so the command cannot silently become stale after
+the shared engine has been merged.
+
+For future pure refactors or bug fixes to the shared engine, compare the current
+worktree against a baseline that already contains `lib/gb`:
+
+```sh
+BASELINE_REF=origin/master ruby lib/gb/tools/verify_sound_engine_refactor.rb
+```
+
+`BASELINE_REF` is required. The refactor verifier builds each standalone
+project from `BASELINE_REF` with that ref's `lib/gb`, then builds the current
+worktree with the current `lib/gb`. Pass project paths as arguments to limit
+the sweep, for example `music/super-mario-land music/ribbon`.
+
+Both verifiers use `verify_audio.py` to compare aggregate APU behavior. They
+compare register-change rates, distinct state counts, distinct frequency counts,
+track speeds when symbols are available, and audio RMS ratio. They do not
+require frame-exact register equality. Use `AUDIO_COMPARE_ARGS` to pass custom
+`verify_audio.py` options when investigating expected audio changes.
