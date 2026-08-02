@@ -712,6 +712,13 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr z, .10
     ld l, Track_Square_DutyCtrl + NUM_MUSIC_TRACKS*Track_SIZEOF ; render SFX
     .10:
+if def(SOUND_ENGINE_ENABLE_PAUSE)
+    jr nz, .render_selected_track
+    ldh a, [hSoundStatus]
+    bit SOUND_STATUS_PAUSED, a ; music paused?
+    ret nz
+    .render_selected_track:
+endc
 else
     ld hl, wTracks + Track_Square_DutyCtrl
 endc
@@ -802,10 +809,6 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr nc, .not_muted ; SFX tracks cannot be muted
 endc
     ldh a, [hSoundStatus]
-if def(SOUND_ENGINE_ENABLE_PAUSE)
-    bit SOUND_STATUS_PAUSED, a ; music paused?
-    jr nz, .is_muted
-endc
     bit 0, a
     jr z, .not_muted
     .is_muted:
@@ -854,6 +857,13 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr z, .10
     ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 2)*Track_SIZEOF ; render SFX
     .10:
+if def(SOUND_ENGINE_ENABLE_PAUSE)
+    jr nz, .render_selected_track
+    ldh a, [hSoundStatus]
+    bit SOUND_STATUS_PAUSED, a ; music paused?
+    ret nz
+    .render_selected_track:
+endc
 else
     ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*2
 endc
@@ -896,10 +906,6 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr nc, .not_muted ; SFX tracks cannot be muted
 endc
     ldh a, [hSoundStatus]
-if def(SOUND_ENGINE_ENABLE_PAUSE)
-    bit SOUND_STATUS_PAUSED, a ; music paused?
-    jr nz, .is_muted
-endc
     bit 2, a
     jr z, .not_muted
     .is_muted:
@@ -942,6 +948,13 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr z, .10
     ld l, Track_Square_DutyCtrl + (NUM_MUSIC_TRACKS + 1)*Track_SIZEOF ; render SFX
     .10:
+if def(SOUND_ENGINE_ENABLE_PAUSE)
+    jr nz, .render_selected_track
+    ldh a, [hSoundStatus]
+    bit SOUND_STATUS_PAUSED, a ; music paused?
+    ret nz
+    .render_selected_track:
+endc
 else
     ld hl, wTracks + Track_Square_DutyCtrl + Track_SIZEOF
 endc
@@ -1032,10 +1045,6 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr nc, .not_muted ; SFX tracks cannot be muted
 endc
     ldh a, [hSoundStatus]
-if def(SOUND_ENGINE_ENABLE_PAUSE)
-    bit SOUND_STATUS_PAUSED, a ; music paused?
-    jr nz, .is_muted
-endc
     bit 1, a
     jr z, .not_muted
     .is_muted:
@@ -1084,6 +1093,13 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr z, .10
     ld l, Track_Envelope_Vol + (NUM_MUSIC_TRACKS + 3)*Track_SIZEOF ; render SFX
     .10:
+if def(SOUND_ENGINE_ENABLE_PAUSE)
+    jr nz, .render_selected_track
+    ldh a, [hSoundStatus]
+    bit SOUND_STATUS_PAUSED, a ; music paused?
+    ret nz
+    .render_selected_track:
+endc
 else
     ld hl, wTracks + Track_Envelope_Vol + Track_SIZEOF*3
 endc
@@ -1159,10 +1175,6 @@ if def(SOUND_ENGINE_ENABLE_SFX)
     jr nc, .not_muted ; SFX tracks cannot be muted
 endc
     ldh a, [hSoundStatus]
-if def(SOUND_ENGINE_ENABLE_PAUSE)
-    bit SOUND_STATUS_PAUSED, a ; music paused?
-    jr nz, .is_muted
-endc
     bit 3, a
     jr z, .not_muted
     .is_muted:
