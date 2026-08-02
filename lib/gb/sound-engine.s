@@ -1190,7 +1190,14 @@ endc
     jr z, .no_regular_output
     or a, 8 ; 1 = 7-bit
     .no_regular_output:
+    ; On DMG, writing NR43 can perturb CH4 even when the value is unchanged.
+    ld b, a
+    ldh a, [rNR43]
+    cp a, b
+    jr z, .skip_nr43_write
+    ld a, b
     ldh [rNR43], a
+    .skip_nr43_write:
     ; NR44
     xor a, a
     dec l ; Track_PeriodHi
