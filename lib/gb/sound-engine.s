@@ -919,6 +919,14 @@ endc
     .write_nr34:
     bit 7, [hl] ; Track_PeriodIndex - check trigger flag
     jr z, .no_trigger
+    ; DMG can corrupt the first 4 bytes of wave RAM when CH3 is retriggered
+    ; while active. Stop and re-enable CH3 first; this is harmless on CGB.
+    push af
+    xor a
+    ldh [rNR30], a
+    ld a, $80
+    ldh [rNR30], a
+    pop af
     or a, $80
     res 7, [hl] ; Track_PeriodIndex - reset trigger flag
     .no_trigger:
