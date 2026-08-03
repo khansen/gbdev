@@ -27,18 +27,22 @@ db $F0,$00,$00
 db $FF,$FF
 env1:
 db $F0
+db $00,$F0,$01
 db $20,$00,$00
 db $FF,$FF
 env3:
 db $F0
+db $00,$F0,$01
 db $40,$00,$00
 db $FF,$FF
 env4:
 db $90
+db $00,$90,$01
 db $0D,$00,$00
 db $FF,$FF
 env5:
 db $D0
+db $00,$D0,$01
 db $1C,$00,$00
 db $FF,$FF
 env6:

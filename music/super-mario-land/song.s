@@ -46,56 +46,77 @@ db $08,$00,$00
 db $FF,$FF
 env1:
 db $F0
+db $00,$F0,$01
 db $00,$F0,$10
+db $00,$F0,$01
 db $F0,$00,$00
 db $FF,$FF
 env2:
 db $F0
+db $00,$F0,$01
 db $00,$F0,$08
+db $00,$F0,$01
 db $0C,$30,$FF
 db $FF,$FF
 env3:
 db $F0
+db $00,$F0,$01
 db $70,$00,$00
 db $FF,$FF
 env4:
 db $E0
+db $00,$E0,$01
 db $0F,$00,$00
 db $FF,$FF
 env5:
 db $E0
+db $00,$E0,$01
 db $0D,$00,$00
 db $FF,$FF
 env6:
 db $F0
+db $00,$F0,$01
 db $00,$F0,$03
+db $00,$F0,$01
 db $F0,$00,$00
 db $FF,$FF
 env7:
 db $F0
+db $00,$F0,$01
 db $00,$F0,$0C
+db $00,$F0,$01
 db $20,$00,$00
 db $FF,$FF
 env8:
 db $F0
+db $00,$F0,$01
 db $0E,$40,$00
+db $00,$40,$01
 db $F0,$C0,$00
+db $00,$C0,$01
 db $0C,$20,$00
+db $00,$20,$01
 db $F0,$70,$00
+db $00,$70,$01
 db $0C,$10,$00
+db $00,$10,$01
 db $F0,$30,$00
+db $00,$30,$01
 db $0C,$10,$00
 db $FF,$FF
 env9:
 db $F0
+db $00,$F0,$01
 db $0C,$40,$00
 db $FF,$FF
 env11:
 db $A0
+db $00,$A0,$01
 db $26,$00,$00
 db $FF,$FF
 env12:
 db $F0
+db $00,$F0,$01
 db $12,$00,$00
 db $FF,$FF
 
